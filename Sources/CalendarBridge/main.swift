@@ -1,0 +1,272 @@
+import EventKit
+import Vapor
+
+// Disable stdout buffering so print() output appears immediately in launchd logs
+setvbuf(stdout, nil, _IONBF, 0)
+
+let app = try Application(.detect())
+defer { app.shutdown() }
+
+let debug = Environment.get("DEBUG") == "1"
+
+// Suppress Vapor's verbose request logging - we have our own middleware
+app.logger.logLevel = .notice
+
+let calendarAPI = CalendarAPI()
+
+// Rate limiting middleware
+actor RateLimiter {
+    private var requests: [String: [Date]] = [:]
+    private let limit: Int
+    private let window: TimeInterval = 1.0  // 1 second
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func checkLimit(for ip: String) -> Bool {
+        let now = Date()
+        let cutoff = now.addingTimeInterval(-window)
+
+        requests[ip] = requests[ip]?.filter { $0 > cutoff } ?? []
+
+        let count = requests[ip]?.count ?? 0
+        if count >= limit {
+            return false
+        }
+
+        requests[ip, default: []].append(now)
+        return true
+    }
+}
+
+struct RateLimitMiddleware: AsyncMiddleware {
+    let limiter: RateLimiter
+    let debug: Bool
+
+    func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
+        let ip =
+            request.headers.first(name: "X-Forwarded-For")
+            ?? request.remoteAddress?.description ?? "unknown"
+
+        let allowed = await limiter.checkLimit(for: ip)
+        if !allowed {
+            if debug {
+                print("[bridge] Rate limit exceeded for \(ip)")
+            }
+            throw Abort(.tooManyRequests, reason: "Rate limit exceeded")
+        }
+
+        return try await next.respond(to: request)
+    }
+}
+
+// Logging middleware
+struct LoggingMiddleware: AsyncMiddleware {
+    let debug: Bool
+
+    func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
+        let start = Date()
+
+        if debug {
+            var logLine = "[bridge] \(request.method) \(request.url.path)"
+            if let query = request.url.query, !query.isEmpty {
+                logLine += "?\(query)"
+            }
+            print(logLine)
+        }
+
+        let response = try await next.respond(to: request)
+        let duration = Date().timeIntervalSince(start) * 1000
+
+        if debug {
+            print("[bridge] → \(response.status.code) (\(Int(duration))ms)")
+        }
+
+        return response
+    }
+}
+
+let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
+let rateLimiter = RateLimiter(limit: rateLimit)
+app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, debug: debug))
+app.middleware.use(LoggingMiddleware(debug: debug))
+
+// Health check
+app.get("health") { req -> Response in
+    let response: [String: Any] = [
+        "ok": true,
+        "result": [
+            "status": "ok",
+            "app": "calendar-bridge",
+        ],
+    ]
+    return try responseJSON(response)
+}
+
+// Schema endpoint
+app.get("schema") { req -> Response in
+    let schema: [String: Any] = [
+        "ok": true,
+        "result": [
+            "app": "calendar-bridge",
+            "endpoints": [
+                [
+                    "method": "GET",
+                    "path": "/calendars",
+                    "params": [],
+                ],
+                [
+                    "method": "GET",
+                    "path": "/events",
+                    "params": [
+                        ["name": "calendar", "from": "query", "type": "string"],
+                        ["name": "from", "from": "query", "type": "string"],
+                        ["name": "to", "from": "query", "type": "string"],
+                        ["name": "limit", "from": "query", "type": "number", "default": 100],
+                        ["name": "status", "from": "query", "type": "string"],
+                        ["name": "siri", "from": "query", "type": "boolean"],
+                    ],
+                ],
+                [
+                    "method": "GET",
+                    "path": "/event",
+                    "params": [
+                        ["name": "id", "from": "query", "type": "string", "required": true]
+                    ],
+                ],
+                [
+                    "method": "POST",
+                    "path": "/events",
+                    "params": [
+                        ["name": "summary", "from": "body", "type": "string", "required": true],
+                        ["name": "startDate", "from": "body", "type": "string", "required": true],
+                        ["name": "endDate", "from": "body", "type": "string", "required": true],
+                        ["name": "calendar", "from": "body", "type": "string"],
+                        ["name": "location", "from": "body", "type": "string"],
+                        ["name": "description", "from": "body", "type": "string"],
+                        ["name": "allDay", "from": "body", "type": "boolean"],
+                    ],
+                ],
+                [
+                    "method": "POST",
+                    "path": "/events/delete",
+                    "params": [
+                        ["name": "ids", "from": "body", "type": "string[]", "required": true],
+                        ["name": "calendar", "from": "body", "type": "string"],
+                    ],
+                ],
+            ],
+        ],
+    ]
+    return try responseJSON(schema)
+}
+
+// GET /calendars
+app.get("calendars") { req async throws -> Response in
+    let calendars = try await calendarAPI.getCalendars()
+    return try responseJSON(["ok": true, "result": calendars])
+}
+
+// GET /events
+app.get("events") { req async throws -> Response in
+    let calendarName = req.query[String.self, at: "calendar"]
+    let fromStr = req.query[String.self, at: "from"]
+    let toStr = req.query[String.self, at: "to"]
+    let limit = req.query[Int.self, at: "limit"] ?? 100
+    let status = req.query[String.self, at: "status"]
+    let siri = req.query[Bool.self, at: "siri"]
+
+    let from = fromStr.flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date()
+    let to =
+        toStr.flatMap { ISO8601DateFormatter().date(from: $0) }
+        ?? Date(timeIntervalSinceNow: 7 * 86400)
+
+    var events = try await calendarAPI.getEvents(
+        calendarName: calendarName,
+        from: from,
+        to: to,
+        limit: limit * 2,
+        statusFilter: status
+    )
+
+    // Filter for Siri suggestions (events with messages:// or mail:// URLs)
+    if siri == true {
+        events = events.filter { event in
+            guard let url = event["url"] as? String else { return false }
+            return url.hasPrefix("messages://") || url.hasPrefix("mail://")
+        }
+    }
+
+    return try responseJSON(["ok": true, "result": Array(events.prefix(limit))])
+}
+
+// GET /event
+app.get("event") { req async throws -> Response in
+    guard let eventId = req.query[String.self, at: "id"] else {
+        throw Abort(.badRequest, reason: "'id' parameter is required")
+    }
+
+    let event = try await calendarAPI.getEvent(id: eventId)
+    return try responseJSON(["ok": true, "result": event as Any])
+}
+
+// POST /events
+app.post("events") { req async throws -> Response in
+    struct CreateEventRequest: Content {
+        let summary: String
+        let startDate: String
+        let endDate: String
+        let calendar: String?
+        let location: String?
+        let description: String?
+        let allDay: Bool?
+    }
+
+    let body = try req.content.decode(CreateEventRequest.self)
+
+    guard let startDate = ISO8601DateFormatter().date(from: body.startDate),
+        let endDate = ISO8601DateFormatter().date(from: body.endDate)
+    else {
+        throw Abort(.badRequest, reason: "Invalid date format")
+    }
+
+    let eventId = try await calendarAPI.createEvent(
+        title: body.summary,
+        startDate: startDate,
+        endDate: endDate,
+        calendarName: body.calendar,
+        location: body.location,
+        notes: body.description,
+        isAllDay: body.allDay ?? false
+    )
+
+    return try responseJSON(["ok": true, "result": ["id": eventId]])
+}
+
+// POST /events/delete
+app.post("events", "delete") { req async throws -> Response in
+    struct DeleteEventsRequest: Content {
+        let ids: [String]
+        let calendar: String?
+    }
+
+    let body = try req.content.decode(DeleteEventsRequest.self)
+    let deleted = try await calendarAPI.deleteEvents(ids: body.ids)
+
+    return try responseJSON(["ok": true, "result": ["deleted": deleted]])
+}
+
+let port = Int(Environment.get("CALENDAR_BRIDGE_PORT") ?? "7334") ?? 7334
+app.http.server.configuration.hostname = "0.0.0.0"
+app.http.server.configuration.port = port
+
+print("calendar-bridge listening on http://localhost:\(port)\(debug ? " (debug)" : "")")
+try app.run()
+
+func responseJSON(_ value: Any) throws -> Response {
+    let data = try JSONSerialization.data(withJSONObject: value)
+    var headers = HTTPHeaders()
+    headers.add(name: .contentType, value: "application/json")
+    return Response(status: .ok, headers: headers, body: .init(data: data))
+}

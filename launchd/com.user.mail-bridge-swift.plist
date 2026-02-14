@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.user.mail-bridge-swift</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/james/Documents/code/swift-bridge/.build/release/MailBridge</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MAIL_BRIDGE_PORT</key>
+        <string>7333</string>
+        <key>DEBUG</key>
+        <string>1</string>
+        <key>RATE_LIMIT_PER_SECOND</key>
+        <string>10</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/james/Library/Logs/mail-bridge.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/james/Library/Logs/mail-bridge.log</string>
+</dict>
+</plist>
