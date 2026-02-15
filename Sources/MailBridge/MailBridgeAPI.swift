@@ -119,28 +119,46 @@ class MailBridgeAPI {
         search: String?, limit: Int, offset: Int
     ) -> [[String: Any]] {
         guard let container = findContainer(mailbox: mailbox, account: account),
-            let allMessages = container.value(forKey: "messages") as? [SBObject]
+            let messagesObj = container.value(forKey: "messages") as? NSObject
         else {
             return []
         }
 
-        let maxScan =
-            search != nil
-            ? min(allMessages.count, 2000)
-            : min(allMessages.count, (limit + offset) * 10)
-        let startIndex = max(0, allMessages.count - maxScan)
-        let recentMessages = Array(allMessages[startIndex...])
+        // Bulk-fetch dates and IDs in two Apple Events instead of N*6
+        guard let ids = messagesObj.value(forKey: "id") as? [Any],
+            let dates = messagesObj.value(forKey: "dateReceived") as? [Any]
+        else {
+            return []
+        }
 
-        let results = recentMessages.compactMap { msg -> [String: Any]? in
-            guard let msgId = msg.value(forKey: "id") as? Int else {
-                return nil
-            }
+        // Pair indices with dates and sort newest-first
+        var indexed: [(index: Int, date: Date)] = []
+        for i in 0..<ids.count {
+            guard let date = dates[i] as? Date else { continue }
+            indexed.append((i, date))
+        }
+        indexed.sort { $0.date > $1.date }
+
+        // For search/filter, we need to scan more candidates since some will be filtered out
+        let needsFilter = search != nil || unread || flagged
+        let scanLimit = needsFilter ? min(indexed.count, (limit + offset) * 20) : limit + offset
+        let candidates = indexed.prefix(scanLimit)
+
+        // Fetch full details only for the top candidates
+        let allMessages = messagesObj as? [SBObject] ?? []
+        var results: [[String: Any]] = []
+
+        for entry in candidates {
+            guard entry.index < allMessages.count else { continue }
+            let msg = allMessages[entry.index]
+
+            guard let msgId = msg.value(forKey: "id") as? Int else { continue }
 
             let isRead = (msg.value(forKey: "readStatus") as? Bool) ?? false
             let isFlagged = (msg.value(forKey: "flaggedStatus") as? Bool) ?? false
 
-            if unread && isRead { return nil }
-            if flagged && !isFlagged { return nil }
+            if unread && isRead { continue }
+            if flagged && !isFlagged { continue }
 
             let subject = (msg.value(forKey: "subject") as? String) ?? ""
             let sender = (msg.value(forKey: "sender") as? String) ?? ""
@@ -149,22 +167,22 @@ class MailBridgeAPI {
                 let matches =
                     subject.lowercased().contains(searchTerm)
                     || sender.lowercased().contains(searchTerm)
-                if !matches { return nil }
+                if !matches { continue }
             }
 
-            let dateReceived = msg.value(forKey: "dateReceived") as? Date
-
-            return [
+            results.append([
                 "id": String(msgId),
                 "subject": subject,
                 "sender": sender,
-                "dateReceived": dateReceived?.toISOString() as Any,
+                "dateReceived": entry.date.toISOString(),
                 "read": isRead,
                 "flagged": isFlagged,
-            ]
+            ])
+
+            if results.count >= limit + offset { break }
         }
 
-        return Array(results.reversed().dropFirst(offset).prefix(limit))
+        return Array(results.dropFirst(offset).prefix(limit))
     }
 
     func getMessage(id: String, mailbox: String, account: String?, includeSource: Bool)
@@ -191,8 +209,10 @@ class MailBridgeAPI {
             let dateReceived = msg.value(forKey: "dateReceived") as? Date
 
             var content: String? = nil
-            if let richText = msg.value(forKey: "content") as? NSObject {
-                content = richText.value(forKey: "string") as? String
+            if let directString = msg.value(forKey: "content") as? String {
+                content = directString
+            } else if let richText = msg.value(forKey: "content") as? NSAttributedString {
+                content = richText.string
             }
 
             var result: [String: Any] = [

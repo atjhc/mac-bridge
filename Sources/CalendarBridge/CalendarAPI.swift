@@ -12,11 +12,14 @@ class CalendarAPI {
     private func requestAccess() async {
         do {
             hasAccess = try await eventStore.requestFullAccessToEvents()
-            if !hasAccess {
-                print("⚠️  Calendar access denied")
+            if hasAccess {
+                let count = eventStore.calendars(for: .event).count
+                print("[calendar] Access granted, \(count) calendars visible")
+            } else {
+                print("[calendar] Access denied")
             }
         } catch {
-            print("❌ Failed to request calendar access: \(error)")
+            print("[calendar] Failed to request access: \(error)")
         }
     }
 
