@@ -343,13 +343,20 @@ class MailBridgeAPI {
         }
 
         guard let acct = targetAccount,
-            let mailboxes = acct.value(forKey: "mailboxes") as? [SBObject],
-            let archiveMailbox = mailboxes.first(where: {
-                ($0.value(forKey: "name") as? String) == "Archive"
-            })
+            let mailboxes = acct.value(forKey: "mailboxes") as? [SBObject]
         else {
             let acctName = account ?? "default"
-            return (0, "No 'Archive' mailbox found for account '\(acctName)'")
+            return (0, "No mailboxes found for account '\(acctName)'")
+        }
+
+        // Try common archive mailbox names: iCloud uses "Archive", Gmail uses "All Mail"
+        let archiveNames = ["Archive", "All Mail"]
+        guard let archiveMailbox = archiveNames.lazy.compactMap({ name in
+            mailboxes.first { ($0.value(forKey: "name") as? String) == name }
+        }).first
+        else {
+            let acctName = account ?? "default"
+            return (0, "No archive mailbox found for account '\(acctName)'")
         }
 
         let targetIds = Set(ids.compactMap { Int($0) })
