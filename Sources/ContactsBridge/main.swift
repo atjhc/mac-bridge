@@ -83,6 +83,61 @@ let rateLimiter = RateLimiter(limit: rateLimit)
 app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
 app.middleware.use(LoggingMiddleware(log: logger))
 
+// Help endpoint
+app.get("help") { req -> Response in
+    let markdown = """
+        # Contacts Bridge API
+
+        HTTP bridge to Apple Contacts (CNContact). All responses return `{"ok": true, "result": ...}` on success.
+
+        ## Contact identifiers
+
+        Contact `id` values are stable Apple Contacts identifiers (UUID strings). They persist across app restarts and syncs.
+
+        ## Endpoints
+
+        ### GET /contacts
+        List contacts. Returns a summary for each contact.
+        - `search` — filter by name (uses Apple's built-in name matching)
+        - `limit` (default: 100)
+
+        Returns: `id`, `name`, `firstName`, `lastName`, `organization`, `jobTitle`, `emails` (array of {label, value}), `phones` (array of {label, value})
+
+        ### GET /contact
+        Get full details for a single contact.
+        - `id` (required) — the contact identifier
+
+        Returns: all fields from /contacts plus `nickname`, `department`, `note`, `birthday`, `addresses` (array of {label, street, city, state, postalCode, country})
+
+        ### GET /search
+        Search contacts by email or phone. At least one parameter is required.
+        - `email` — search by email address (partial match supported)
+        - `phone` — search by phone number (partial match supported)
+
+        Returns: same fields as /contacts
+
+        ### POST /contacts
+        Create a new contact.
+        - `firstName` (required)
+        - `lastName`
+        - `organization`
+        - `jobTitle`
+        - `email` — added with "work" label
+        - `phone` — added with "mobile" label
+
+        Returns: `{"id": "..."}` with the new contact's identifier.
+
+        ### GET /health
+        Returns `{"ok": true}` if the bridge is running.
+
+        ### GET /schema
+        Returns machine-readable endpoint definitions (JSON).
+        """
+    var headers = HTTPHeaders()
+    headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
+    return Response(status: .ok, headers: headers, body: .init(string: markdown))
+}
+
 // Health check
 app.get("health") { req -> Response in
     let response: [String: Any] = [

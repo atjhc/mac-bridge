@@ -92,6 +92,110 @@ let rateLimiter = RateLimiter(limit: rateLimit)
 app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
 app.middleware.use(LoggingMiddleware(log: logger))
 
+// Help endpoint
+app.get("help") { req -> Response in
+    let markdown = """
+        # Mail Bridge API
+
+        HTTP bridge to Apple Mail via ScriptingBridge. All responses return `{"ok": true, "result": ...}` on success or `{"ok": false, "error": "..."}` on failure.
+
+        ## Message identifiers
+
+        Messages have two IDs:
+        - `id` — Mail.app's internal integer ID. Fast but **ephemeral**: changes when a message is moved between mailboxes.
+        - `messageId` — The RFC 2822 Message-ID header (e.g. `<abc123@example.com>`). **Permanent and globally unique**. Prefer this for any operation where there may be a delay between fetching and acting.
+
+        All action endpoints accept either type in the `ids` array. The bridge auto-detects: values containing `@` are treated as messageId, otherwise as integer id. You can mix both types in a single call.
+
+        ## Multi-account usage
+
+        This bridge supports multiple mail accounts (e.g. iCloud, Gmail). Most endpoints accept an optional `account` parameter. If omitted, the bridge uses the default account or searches across all accounts. Always specify `account` when operating on a specific mailbox to avoid ambiguity.
+
+        Use `GET /accounts` to discover available account names, then pass them as the `account` parameter.
+
+        ## Endpoints
+
+        ### GET /accounts
+        List all mail accounts.
+
+        ### GET /mailboxes
+        List mailboxes. Optional: `account` to filter by account.
+
+        ### GET /messages
+        List messages, sorted newest-first.
+        - `mailbox` (default: INBOX) — mailbox name
+        - `account` — account name
+        - `unread` (default: false) — only unread messages
+        - `flagged` (default: false) — only flagged messages
+        - `search` — filter by subject or sender substring
+        - `limit` (default: 50, max: 200) — number of messages
+        - `offset` (default: 0) — skip this many messages
+
+        Returns: `id`, `messageId`, `subject`, `sender`, `dateReceived`, `read`, `flagged`
+
+        ### GET /message
+        Get a single message with full content.
+        - `id` (required) — integer id or messageId string
+        - `mailbox` (default: INBOX)
+        - `account`
+        - `includeSource` (default: false) — include raw RFC 2822 source
+
+        Returns: same fields as /messages plus `content` (plain text body) and optionally `source`.
+
+        ### POST /messages/read
+        Mark messages as read or unread.
+        - `ids` (required) — array of id or messageId strings
+        - `read` (default: true) — false to mark unread
+        - `mailbox` (default: INBOX)
+        - `account`
+
+        ### POST /messages/flag
+        Flag or unflag messages.
+        - `ids` (required)
+        - `flagged` (default: true)
+        - `mailbox` (default: INBOX)
+        - `account`
+
+        ### POST /messages/move
+        Move messages to a different mailbox.
+        - `ids` (required)
+        - `mailbox` (required) — destination mailbox name
+        - `account` — destination account
+        - `fromMailbox` (default: INBOX) — source mailbox
+        - `fromAccount` — source account
+
+        ### POST /messages/archive
+        Move messages to the account's archive mailbox. The bridge automatically resolves the correct archive mailbox per account (e.g. "Archive" for iCloud, "All Mail" for Gmail).
+        - `ids` (required)
+        - `mailbox` (default: INBOX) — source mailbox
+        - `account` — **always specify this**; archive destination varies by account
+
+        Group archive calls by account. Do not mix ids from different accounts in a single call.
+
+        ### POST /messages/delete
+        Permanently delete messages.
+        - `ids` (required)
+        - `mailbox` (default: INBOX)
+        - `account`
+
+        ### POST /compose
+        Send a new email via Mail.app.
+        - `to` (required) — recipient email address
+        - `subject` (required)
+        - `body` (required) — plain text body
+        - `cc` — CC recipient
+
+        ### GET /health
+        Returns `{"ok": true}` if the bridge is running.
+
+        ### GET /schema
+        Returns machine-readable endpoint definitions (JSON).
+        """
+    var headers = HTTPHeaders()
+    headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
+    return Response(status: .ok, headers: headers, body: .init(string: markdown))
+}
+
 // Health check
 app.get("health") { req -> Response in
     let response: [String: Any] = [

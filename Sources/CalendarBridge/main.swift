@@ -83,6 +83,62 @@ let rateLimiter = RateLimiter(limit: rateLimit)
 app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
 app.middleware.use(LoggingMiddleware(log: logger))
 
+// Help endpoint
+app.get("help") { req -> Response in
+    let markdown = """
+        # Calendar Bridge API
+
+        HTTP bridge to Apple Calendar (EventKit). All responses return `{"ok": true, "result": ...}` on success.
+
+        ## Date format
+
+        All dates use ISO 8601 format: `2026-02-15T10:00:00Z`. When no timezone offset is provided, the system timezone is assumed.
+
+        ## Endpoints
+
+        ### GET /calendars
+        List all calendars. Returns `id`, `name`, and `color` (hex) for each.
+
+        ### GET /events
+        List events in a date range, sorted chronologically.
+        - `calendar` — filter by calendar name (e.g. "Home", "Work")
+        - `from` (default: now) — ISO 8601 start date
+        - `to` (default: 7 days from now) — ISO 8601 end date
+        - `limit` (default: 100)
+        - `status` — filter by status: `confirmed`, `tentative`, `canceled`, or `pending`/`none`
+        - `siri` (default: false) — only show Siri-suggested events (those with messages:// or mail:// URLs)
+
+        Returns: `id`, `summary`, `startDate`, `endDate`, `allDayEvent`, `calendar`, `location`, `description`, `status`, `attendees`, `participationStatus`, `organizer`, `url`
+
+        ### GET /event
+        Get a single event by ID.
+        - `id` (required) — the event identifier from /events
+
+        ### POST /events
+        Create a new calendar event.
+        - `summary` (required) — event title
+        - `startDate` (required) — ISO 8601
+        - `endDate` (required) — ISO 8601
+        - `calendar` — calendar name; uses default calendar if omitted
+        - `location`
+        - `description` — event notes
+        - `allDay` (default: false)
+
+        ### POST /events/delete
+        Delete events by ID.
+        - `ids` (required) — array of event identifier strings
+
+        ### GET /health
+        Returns `{"ok": true}` if the bridge is running.
+
+        ### GET /schema
+        Returns machine-readable endpoint definitions (JSON).
+        """
+    var headers = HTTPHeaders()
+    headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
+    return Response(status: .ok, headers: headers, body: .init(string: markdown))
+}
+
 // Health check
 app.get("health") { req -> Response in
     let response: [String: Any] = [
