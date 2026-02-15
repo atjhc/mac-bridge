@@ -9,6 +9,15 @@ defer { app.shutdown() }
 
 let mailAPI = MailBridgeAPI()
 
+// Configure archive mailbox per account (format: "Account1=Mailbox,Account2=Mailbox")
+if let archiveConfig = Environment.get("ARCHIVE_MAILBOXES") {
+    for entry in archiveConfig.split(separator: ",") {
+        let parts = entry.split(separator: "=", maxSplits: 1)
+        guard parts.count == 2 else { continue }
+        mailAPI.archiveMailboxes[String(parts[0])] = String(parts[1])
+    }
+}
+
 // Suppress Vapor's verbose request logging - we have our own middleware
 app.logger.logLevel = .notice
 

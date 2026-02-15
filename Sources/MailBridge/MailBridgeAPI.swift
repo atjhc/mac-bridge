@@ -3,6 +3,7 @@ import ScriptingBridge
 
 class MailBridgeAPI {
     private let mail: SBApplication?
+    var archiveMailboxes: [String: String] = [:]
 
     init() {
         self.mail = SBApplication(bundleIdentifier: "com.apple.mail")
@@ -349,13 +350,19 @@ class MailBridgeAPI {
             return (0, "No mailboxes found for account '\(acctName)'")
         }
 
-        // Try common archive mailbox names: iCloud uses "Archive", Gmail uses "All Mail"
-        let archiveNames = ["Archive", "All Mail"]
+        let acctName = (acct.value(forKey: "name") as? String) ?? ""
+
+        // Per-account override, then common defaults
+        var archiveNames: [String] = []
+        if let configured = archiveMailboxes[acctName] {
+            archiveNames.append(configured)
+        }
+        archiveNames += ["Archive", "All Mail"]
+
         guard let archiveMailbox = archiveNames.lazy.compactMap({ name in
             mailboxes.first { ($0.value(forKey: "name") as? String) == name }
         }).first
         else {
-            let acctName = account ?? "default"
             return (0, "No archive mailbox found for account '\(acctName)'")
         }
 
