@@ -1,5 +1,8 @@
 import EventKit
 import Foundation
+import OSLog
+
+private let log = Logger(subsystem: "com.user.bridge", category: "calendar")
 
 class CalendarAPI {
     private let eventStore = EKEventStore()
@@ -14,12 +17,12 @@ class CalendarAPI {
             hasAccess = try await eventStore.requestFullAccessToEvents()
             if hasAccess {
                 let count = eventStore.calendars(for: .event).count
-                print("[calendar] Access granted, \(count) calendars visible")
+                log.info("Access granted, \(count) calendars visible")
             } else {
-                print("[calendar] Access denied")
+                log.warning("Access denied")
             }
         } catch {
-            print("[calendar] Failed to request access: \(error)")
+            log.error("Failed to request access: \(error)")
         }
     }
 
@@ -144,7 +147,7 @@ class CalendarAPI {
                 try eventStore.remove(event, span: .thisEvent)
                 deleted += 1
             } catch {
-                print("Failed to delete event \(id): \(error)")
+                log.error("Failed to delete event \(id): \(error)")
             }
         }
 

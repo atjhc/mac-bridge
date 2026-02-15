@@ -1,14 +1,13 @@
 import Foundation
+import OSLog
 import Vapor
 
-// Disable stdout buffering so print() output appears immediately in launchd logs
-setvbuf(stdout, nil, _IONBF, 0)
+let logger = os.Logger(subsystem: "com.user.bridge", category: "mail")
 
 let app = try Application(.detect())
 defer { app.shutdown() }
 
 let mailAPI = MailBridgeAPI()
-let debug = Environment.get("DEBUG") == "1"
 
 // Suppress Vapor's verbose request logging - we have our own middleware
 app.logger.logLevel = .notice
@@ -41,7 +40,7 @@ actor RateLimiter {
 
 struct RateLimitMiddleware: AsyncMiddleware {
     let limiter: RateLimiter
-    let debug: Bool
+    let log: os.Logger
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
         let ip =
@@ -50,9 +49,7 @@ struct RateLimitMiddleware: AsyncMiddleware {
 
         let allowed = await limiter.checkLimit(for: ip)
         if !allowed {
-            if debug {
-                print("[bridge] Rate limit exceeded for \(ip)")
-            }
+            log.warning("Rate limit exceeded for \(ip, privacy: .public)")
             throw Abort(.tooManyRequests, reason: "Rate limit exceeded")
         }
 
@@ -60,27 +57,22 @@ struct RateLimitMiddleware: AsyncMiddleware {
     }
 }
 
-// Logging middleware
 struct LoggingMiddleware: AsyncMiddleware {
-    let debug: Bool
+    let log: os.Logger
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
         let start = Date()
 
-        if debug {
-            var logLine = "[bridge] \(request.method) \(request.url.path)"
-            if let query = request.url.query, !query.isEmpty {
-                logLine += "?\(query)"
-            }
-            print(logLine)
+        var logLine = "\(request.method) \(request.url.path)"
+        if let query = request.url.query, !query.isEmpty {
+            logLine += "?\(query)"
         }
+        log.info("\(logLine, privacy: .public)")
 
         let response = try await next.respond(to: request)
         let duration = Date().timeIntervalSince(start) * 1000
 
-        if debug {
-            print("[bridge] → \(response.status.code) (\(Int(duration))ms)")
-        }
+        log.info("\(logLine, privacy: .public) → \(response.status.code) (\(Int(duration))ms)")
 
         return response
     }
@@ -88,8 +80,8 @@ struct LoggingMiddleware: AsyncMiddleware {
 
 let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
 let rateLimiter = RateLimiter(limit: rateLimit)
-app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, debug: debug))
-app.middleware.use(LoggingMiddleware(debug: debug))
+app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
+app.middleware.use(LoggingMiddleware(log: logger))
 
 // Health check
 app.get("health") { req -> Response in
@@ -180,6 +172,15 @@ app.get("schema") { req -> Response in
                             "default": "INBOX",
                         ],
                         ["name": "fromAccount", "from": "body", "type": "string"],
+                    ],
+                ],
+                [
+                    "method": "POST",
+                    "path": "/messages/archive",
+                    "params": [
+                        ["name": "ids", "from": "body", "type": "string[]", "required": true],
+                        ["name": "mailbox", "from": "body", "type": "string", "default": "INBOX"],
+                        ["name": "account", "from": "body", "type": "string"],
                     ],
                 ],
                 [
@@ -309,6 +310,25 @@ app.post("messages", "move") { req async throws -> Response in
     return try responseJSON(["ok": true, "result": ["moved": result.moved]])
 }
 
+// POST /messages/archive
+app.post("messages", "archive") { req async throws -> Response in
+    struct ArchiveMessagesRequest: Content {
+        let ids: [String]
+        let mailbox: String?
+        let account: String?
+    }
+
+    let body = try req.content.decode(ArchiveMessagesRequest.self)
+    let result = mailAPI.archiveMessages(
+        ids: body.ids, mailbox: body.mailbox ?? "INBOX", account: body.account)
+
+    if let error = result.error {
+        return try responseJSON(["ok": false, "error": error])
+    }
+
+    return try responseJSON(["ok": true, "result": ["archived": result.archived]])
+}
+
 // POST /messages/delete
 app.post("messages", "delete") { req async throws -> Response in
     struct DeleteMessagesRequest: Content {
@@ -348,7 +368,7 @@ let port = Int(Environment.get("MAIL_BRIDGE_PORT") ?? "7333") ?? 7333
 app.http.server.configuration.hostname = "0.0.0.0"
 app.http.server.configuration.port = port
 
-print("mail-bridge listening on http://localhost:\(port)\(debug ? " (debug)" : "")")
+logger.notice("Listening on http://localhost:\(port)")
 try app.run()
 
 func responseJSON(_ value: Any) throws -> Response {

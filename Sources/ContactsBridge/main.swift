@@ -1,13 +1,11 @@
 import Contacts
+import OSLog
 import Vapor
 
-// Disable stdout buffering so print() output appears immediately in launchd logs
-setvbuf(stdout, nil, _IONBF, 0)
+let logger = os.Logger(subsystem: "com.user.bridge", category: "contacts")
 
 let app = try Application(.detect())
 defer { app.shutdown() }
-
-let debug = Environment.get("DEBUG") == "1"
 
 // Suppress Vapor's verbose request logging - we have our own middleware
 app.logger.logLevel = .notice
@@ -42,7 +40,7 @@ actor RateLimiter {
 
 struct RateLimitMiddleware: AsyncMiddleware {
     let limiter: RateLimiter
-    let debug: Bool
+    let log: os.Logger
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
         let ip =
@@ -51,9 +49,7 @@ struct RateLimitMiddleware: AsyncMiddleware {
 
         let allowed = await limiter.checkLimit(for: ip)
         if !allowed {
-            if debug {
-                print("[bridge] Rate limit exceeded for \(ip)")
-            }
+            log.warning("Rate limit exceeded for \(ip, privacy: .public)")
             throw Abort(.tooManyRequests, reason: "Rate limit exceeded")
         }
 
@@ -61,27 +57,22 @@ struct RateLimitMiddleware: AsyncMiddleware {
     }
 }
 
-// Logging middleware
 struct LoggingMiddleware: AsyncMiddleware {
-    let debug: Bool
+    let log: os.Logger
 
     func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
         let start = Date()
 
-        if debug {
-            var logLine = "[bridge] \(request.method) \(request.url.path)"
-            if let query = request.url.query, !query.isEmpty {
-                logLine += "?\(query)"
-            }
-            print(logLine)
+        var logLine = "\(request.method) \(request.url.path)"
+        if let query = request.url.query, !query.isEmpty {
+            logLine += "?\(query)"
         }
+        log.info("\(logLine, privacy: .public)")
 
         let response = try await next.respond(to: request)
         let duration = Date().timeIntervalSince(start) * 1000
 
-        if debug {
-            print("[bridge] → \(response.status.code) (\(Int(duration))ms)")
-        }
+        log.info("\(logLine, privacy: .public) → \(response.status.code) (\(Int(duration))ms)")
 
         return response
     }
@@ -89,8 +80,8 @@ struct LoggingMiddleware: AsyncMiddleware {
 
 let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
 let rateLimiter = RateLimiter(limit: rateLimit)
-app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, debug: debug))
-app.middleware.use(LoggingMiddleware(debug: debug))
+app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
+app.middleware.use(LoggingMiddleware(log: logger))
 
 // Health check
 app.get("health") { req -> Response in
@@ -213,7 +204,7 @@ let port = Int(Environment.get("CONTACTS_BRIDGE_PORT") ?? "7335") ?? 7335
 app.http.server.configuration.hostname = "0.0.0.0"
 app.http.server.configuration.port = port
 
-print("contacts-bridge listening on http://localhost:\(port)\(debug ? " (debug)" : "")")
+logger.notice("Listening on http://localhost:\(port)")
 try app.run()
 
 func responseJSON(_ value: Any) throws -> Response {

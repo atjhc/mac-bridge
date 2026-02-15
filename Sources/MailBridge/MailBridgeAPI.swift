@@ -320,6 +320,55 @@ class MailBridgeAPI {
         return (moved, nil)
     }
 
+    func archiveMessages(ids: [String], mailbox: String, account: String?) -> (
+        archived: Int, error: String?
+    ) {
+        guard let app = mail,
+            let accounts = app.value(forKey: "accounts") as? [SBObject]
+        else {
+            return (0, "Mail not available")
+        }
+
+        guard let source = findContainer(mailbox: mailbox, account: account),
+            let allMessages = source.value(forKey: "messages") as? [SBObject]
+        else {
+            return (0, "source mailbox not found")
+        }
+
+        // Find the "Archive" mailbox for the target account
+        let targetAccount = accounts.first { acct in
+            guard let name = acct.value(forKey: "name") as? String else { return false }
+            if let account = account { return name == account }
+            return true
+        }
+
+        guard let acct = targetAccount,
+            let mailboxes = acct.value(forKey: "mailboxes") as? [SBObject],
+            let archiveMailbox = mailboxes.first(where: {
+                ($0.value(forKey: "name") as? String) == "Archive"
+            })
+        else {
+            let acctName = account ?? "default"
+            return (0, "No 'Archive' mailbox found for account '\(acctName)'")
+        }
+
+        let targetIds = Set(ids.compactMap { Int($0) })
+        var archived = 0
+
+        for msg in allMessages {
+            guard let msgId = msg.value(forKey: "id") as? Int,
+                targetIds.contains(msgId)
+            else {
+                continue
+            }
+
+            _ = msg.perform(NSSelectorFromString("moveTo:"), with: archiveMailbox)
+            archived += 1
+        }
+
+        return (archived, nil)
+    }
+
     func deleteMessages(ids: [String], mailbox: String, account: String?) -> Int {
         guard let container = findContainer(mailbox: mailbox, account: account),
             let allMessages = container.value(forKey: "messages") as? [SBObject]

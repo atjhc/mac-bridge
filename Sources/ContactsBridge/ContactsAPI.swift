@@ -1,5 +1,8 @@
 import Contacts
 import Foundation
+import OSLog
+
+private let log = Logger(subsystem: "com.user.bridge", category: "contacts")
 
 class ContactsAPI {
     private let store = CNContactStore()
@@ -12,11 +15,13 @@ class ContactsAPI {
     private func requestAccess() async {
         do {
             hasAccess = try await store.requestAccess(for: .contacts)
-            if !hasAccess {
-                print("⚠️  Contacts access denied")
+            if hasAccess {
+                log.info("Access granted")
+            } else {
+                log.warning("Access denied")
             }
         } catch {
-            print("❌ Failed to request contacts access: \(error)")
+            log.error("Failed to request access: \(error)")
         }
     }
 
