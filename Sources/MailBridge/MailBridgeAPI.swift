@@ -171,8 +171,11 @@ class MailBridgeAPI {
                 if !matches { continue }
             }
 
+            let messageId = (msg.value(forKey: "messageId") as? String) ?? ""
+
             results.append([
                 "id": String(msgId),
+                "messageId": messageId,
                 "subject": subject,
                 "sender": sender,
                 "dateReceived": entry.date.toISOString(),
@@ -189,53 +192,78 @@ class MailBridgeAPI {
     func getMessage(id: String, mailbox: String, account: String?, includeSource: Bool)
         -> [String: Any]?
     {
-        guard let msgId = Int(id),
-            let container = findContainer(mailbox: mailbox, account: account),
+        guard let container = findContainer(mailbox: mailbox, account: account),
             let allMessages = container.value(forKey: "messages") as? [SBObject]
         else {
             return nil
         }
 
-        for msg in allMessages {
-            guard let currentId = msg.value(forKey: "id") as? Int,
-                currentId == msgId
-            else {
-                continue
-            }
+        let matched = findMessages(ids: [id], in: allMessages)
+        guard let msg = matched.first else { return nil }
 
-            let subject = (msg.value(forKey: "subject") as? String) ?? ""
-            let sender = (msg.value(forKey: "sender") as? String) ?? ""
-            let isRead = (msg.value(forKey: "readStatus") as? Bool) ?? false
-            let isFlagged = (msg.value(forKey: "flaggedStatus") as? Bool) ?? false
-            let dateReceived = msg.value(forKey: "dateReceived") as? Date
+        let subject = (msg.value(forKey: "subject") as? String) ?? ""
+        let sender = (msg.value(forKey: "sender") as? String) ?? ""
+        let isRead = (msg.value(forKey: "readStatus") as? Bool) ?? false
+        let isFlagged = (msg.value(forKey: "flaggedStatus") as? Bool) ?? false
+        let dateReceived = msg.value(forKey: "dateReceived") as? Date
+        let msgId = (msg.value(forKey: "id") as? Int).map { String($0) } ?? ""
+        let messageId = (msg.value(forKey: "messageId") as? String) ?? ""
 
-            var content: String? = nil
-            if let directString = msg.value(forKey: "content") as? String {
-                content = directString
-            } else if let richText = msg.value(forKey: "content") as? NSAttributedString {
-                content = richText.string
-            }
-
-            var result: [String: Any] = [
-                "id": String(msgId),
-                "subject": subject,
-                "sender": sender,
-                "dateReceived": dateReceived?.toISOString() as Any,
-                "read": isRead,
-                "flagged": isFlagged,
-                "content": content as Any,
-            ]
-
-            if includeSource {
-                if let source = msg.value(forKey: "source") as? String {
-                    result["source"] = source
-                }
-            }
-
-            return result
+        var content: String? = nil
+        if let directString = msg.value(forKey: "content") as? String {
+            content = directString
+        } else if let richText = msg.value(forKey: "content") as? NSAttributedString {
+            content = richText.string
         }
 
-        return nil
+        var result: [String: Any] = [
+            "id": msgId,
+            "messageId": messageId,
+            "subject": subject,
+            "sender": sender,
+            "dateReceived": dateReceived?.toISOString() as Any,
+            "read": isRead,
+            "flagged": isFlagged,
+            "content": content as Any,
+        ]
+
+        if includeSource {
+            if let source = msg.value(forKey: "source") as? String {
+                result["source"] = source
+            }
+        }
+
+        return result
+    }
+
+    // MARK: - Message Matching
+
+    /// Filter messages matching the given IDs. Tries integer `id` first;
+    /// any IDs that look like RFC Message-IDs (contain "@") are matched
+    /// against the `messageId` header instead.
+    private func findMessages(ids: [String], in messages: [SBObject]) -> [SBObject] {
+        let intIds = Set(ids.compactMap { Int($0) })
+        let headerIds = Set(ids.filter { $0.contains("@") })
+
+        guard !intIds.isEmpty || !headerIds.isEmpty else { return [] }
+
+        var matched: [SBObject] = []
+        for msg in messages {
+            if !intIds.isEmpty,
+                let msgId = msg.value(forKey: "id") as? Int,
+                intIds.contains(msgId)
+            {
+                matched.append(msg)
+                continue
+            }
+            if !headerIds.isEmpty,
+                let msgHeaderId = msg.value(forKey: "messageId") as? String,
+                headerIds.contains(msgHeaderId)
+            {
+                matched.append(msg)
+            }
+        }
+        return matched
     }
 
     // MARK: - Message Actions
@@ -247,21 +275,11 @@ class MailBridgeAPI {
             return 0
         }
 
-        let targetIds = Set(ids.compactMap { Int($0) })
-        var updated = 0
-
-        for msg in allMessages {
-            guard let msgId = msg.value(forKey: "id") as? Int,
-                targetIds.contains(msgId)
-            else {
-                continue
-            }
-
+        let matched = findMessages(ids: ids, in: allMessages)
+        for msg in matched {
             msg.setValue(read, forKey: "readStatus")
-            updated += 1
         }
-
-        return updated
+        return matched.count
     }
 
     func setFlaggedStatus(ids: [String], flagged: Bool, mailbox: String, account: String?) -> Int {
@@ -271,21 +289,11 @@ class MailBridgeAPI {
             return 0
         }
 
-        let targetIds = Set(ids.compactMap { Int($0) })
-        var updated = 0
-
-        for msg in allMessages {
-            guard let msgId = msg.value(forKey: "id") as? Int,
-                targetIds.contains(msgId)
-            else {
-                continue
-            }
-
+        let matched = findMessages(ids: ids, in: allMessages)
+        for msg in matched {
             msg.setValue(flagged, forKey: "flaggedStatus")
-            updated += 1
         }
-
-        return updated
+        return matched.count
     }
 
     func moveMessages(
@@ -304,21 +312,11 @@ class MailBridgeAPI {
             return (0, "failed to get messages from source")
         }
 
-        let targetIds = Set(ids.compactMap { Int($0) })
-        var moved = 0
-
-        for msg in allMessages {
-            guard let msgId = msg.value(forKey: "id") as? Int,
-                targetIds.contains(msgId)
-            else {
-                continue
-            }
-
+        let matched = findMessages(ids: ids, in: allMessages)
+        for msg in matched {
             _ = msg.perform(NSSelectorFromString("moveTo:"), with: target)
-            moved += 1
         }
-
-        return (moved, nil)
+        return (matched.count, nil)
     }
 
     func archiveMessages(ids: [String], mailbox: String, account: String?) -> (
@@ -366,21 +364,11 @@ class MailBridgeAPI {
             return (0, "No archive mailbox found for account '\(acctName)'")
         }
 
-        let targetIds = Set(ids.compactMap { Int($0) })
-        var archived = 0
-
-        for msg in allMessages {
-            guard let msgId = msg.value(forKey: "id") as? Int,
-                targetIds.contains(msgId)
-            else {
-                continue
-            }
-
+        let matched = findMessages(ids: ids, in: allMessages)
+        for msg in matched {
             _ = msg.perform(NSSelectorFromString("moveTo:"), with: archiveMailbox)
-            archived += 1
         }
-
-        return (archived, nil)
+        return (matched.count, nil)
     }
 
     func deleteMessages(ids: [String], mailbox: String, account: String?) -> Int {
@@ -390,21 +378,11 @@ class MailBridgeAPI {
             return 0
         }
 
-        let targetIds = Set(ids.compactMap { Int($0) })
-        var deleted = 0
-
-        for msg in allMessages {
-            guard let msgId = msg.value(forKey: "id") as? Int,
-                targetIds.contains(msgId)
-            else {
-                continue
-            }
-
+        let matched = findMessages(ids: ids, in: allMessages)
+        for msg in matched {
             _ = msg.perform(NSSelectorFromString("delete"))
-            deleted += 1
         }
-
-        return deleted
+        return matched.count
     }
 
     func composeMessage(to: String, subject: String, body: String, cc: String?) -> (
