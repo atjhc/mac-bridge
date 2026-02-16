@@ -9,30 +9,36 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 LAUNCHD_DIR="$PROJECT_DIR/launchd"
 TARGET_DIR="$HOME/Library/LaunchAgents"
 
-echo "🚀 Swift Bridge LaunchAgent Installer"
-echo "======================================="
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BOLD='\033[1m'
+RESET='\033[0m'
+
+echo -e "${BOLD}Swift Bridge LaunchAgent Installer${RESET}"
+echo "==================================="
 echo
 
 # Check if binaries exist
 echo "Checking for release binaries..."
 if [ ! -f "$PROJECT_DIR/.build/release/CalendarBridge" ]; then
-    echo "❌ CalendarBridge binary not found"
+    echo -e "${RED}CalendarBridge binary not found${RESET}"
     echo "   Run 'swift build -c release' first"
     exit 1
 fi
 
 if [ ! -f "$PROJECT_DIR/.build/release/ContactsBridge" ]; then
-    echo "❌ ContactsBridge binary not found"
+    echo -e "${RED}ContactsBridge binary not found${RESET}"
     echo "   Run 'swift build -c release' first"
     exit 1
 fi
 
 if [ ! -f "$PROJECT_DIR/.build/release/MailBridge" ]; then
-    echo "❌ MailBridge binary not found"
+    echo -e "${RED}MailBridge binary not found${RESET}"
     echo "   Run 'swift build -c release' first"
     exit 1
 fi
-echo "✓ Binaries found"
+echo -e "${GREEN}Binaries found${RESET}"
 echo
 
 # Create LaunchAgents directory if it doesn't exist
@@ -43,28 +49,28 @@ for plist in "$LAUNCHD_DIR"/*.plist; do
     filename=$(basename "$plist")
     target="$TARGET_DIR/$filename"
     label=$(basename "$filename" .plist)
-    
+
     echo "Installing $filename..."
-    
+
     # Unload if already loaded
     if launchctl list | grep -q "$label"; then
         echo "  Unloading existing service..."
         launchctl unload "$target" 2>/dev/null || true
     fi
-    
+
     # Copy plist
     echo "  Copying to $TARGET_DIR/"
     cp "$plist" "$target"
-    
+
     # Load the plist
     echo "  Loading service..."
     launchctl load "$target"
-    
+
     # Start the service
     echo "  Starting service..."
     launchctl start "$label"
-    
-    echo "✓ $label installed and started"
+
+    echo -e "  ${GREEN}$label installed and started${RESET}"
     echo
 done
 
@@ -80,27 +86,26 @@ contacts_status=$(curl -s http://localhost:7335/health 2>/dev/null | grep -o '"c
 mail_status=$(curl -s http://localhost:7333/health 2>/dev/null | grep -o '"mail-bridge"' || echo "")
 
 if [ -n "$calendar_status" ]; then
-    echo "✓ Calendar Bridge running on port 7334"
+    echo -e "  ${GREEN}Calendar Bridge running on port 7334${RESET}"
 else
-    echo "⚠️  Calendar Bridge may not be running"
+    echo -e "  ${YELLOW}Calendar Bridge may not be running${RESET}"
 fi
 
 if [ -n "$contacts_status" ]; then
-    echo "✓ Contacts Bridge running on port 7335"
+    echo -e "  ${GREEN}Contacts Bridge running on port 7335${RESET}"
 else
-    echo "⚠️  Contacts Bridge may not be running"
+    echo -e "  ${YELLOW}Contacts Bridge may not be running${RESET}"
 fi
 
 if [ -n "$mail_status" ]; then
-    echo "✓ Mail Bridge running on port 7333"
+    echo -e "  ${GREEN}Mail Bridge running on port 7333${RESET}"
 else
-    echo "⚠️  Mail Bridge may not be running"
+    echo -e "  ${YELLOW}Mail Bridge may not be running${RESET}"
 fi
 
 echo
-echo "📝 Logs are available at:"
-echo "   ~/Library/Logs/calendar-bridge.log"
-echo "   ~/Library/Logs/contacts-bridge.log"
-echo "   ~/Library/Logs/mail-bridge.log"
+echo -e "${BOLD}Logs:${RESET}"
+echo "   Startup logs: ~/Library/Logs/*-bridge.log (stdout/stderr from launchd)"
+echo "   Request logs: log stream --predicate 'subsystem == \"com.user.bridge\"' --level info"
 echo
-echo "🎉 Installation complete!"
+echo -e "${GREEN}Installation complete!${RESET}"
