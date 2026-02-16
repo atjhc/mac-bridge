@@ -88,7 +88,7 @@ app.get("help") { req -> Response in
     let markdown = """
         # Things 3 Bridge API
 
-        HTTP bridge to Things 3 via JXA/AppleScript. All responses return `{"ok": true, "result": ...}` on success.
+        HTTP bridge to Things 3. All responses return `{"ok": true, "result": ...}` on success.
 
         Things 3 must be running for this bridge to work.
 
