@@ -315,6 +315,16 @@ app.get("schema") { req -> Response in
                         ["name": "cc", "from": "body", "type": "string"],
                     ],
                 ],
+                [
+                    "method": "GET",
+                    "path": "/help",
+                    "params": [],
+                ],
+                [
+                    "method": "GET",
+                    "path": "/health",
+                    "params": [],
+                ],
             ],
         ],
     ]

@@ -33,6 +33,18 @@ let package = Package(
             dependencies: [
                 .product(name: "Vapor", package: "vapor")
             ]
+        ),
+        .executableTarget(
+            name: "NotesBridge",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor")
+            ]
+        ),
+        .executableTarget(
+            name: "NetNewsWireBridge",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor")
+            ]
         )
     ]
 )

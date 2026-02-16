@@ -192,6 +192,16 @@ app.get("schema") { req -> Response in
                         ["name": "phone", "from": "body", "type": "string"],
                     ],
                 ],
+                [
+                    "method": "GET",
+                    "path": "/help",
+                    "params": [],
+                ],
+                [
+                    "method": "GET",
+                    "path": "/health",
+                    "params": [],
+                ],
             ],
         ],
     ]

@@ -243,6 +243,16 @@ app.get("schema") { req -> Response in
                         ["name": "ids", "from": "body", "type": "string[]", "required": true]
                     ],
                 ],
+                [
+                    "method": "GET",
+                    "path": "/help",
+                    "params": [],
+                ],
+                [
+                    "method": "GET",
+                    "path": "/health",
+                    "params": [],
+                ],
             ],
         ],
     ]
