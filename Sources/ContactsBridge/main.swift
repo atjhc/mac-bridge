@@ -78,17 +78,122 @@ struct LoggingMiddleware: AsyncMiddleware {
     }
 }
 
+struct FormatMiddleware: AsyncMiddleware {
+    func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
+        let response = try await next.respond(to: request)
+
+        let wantsJSON = request.query[String.self, at: "format"] == "json"
+            || request.headers.first(name: .accept)?.contains("application/json") == true
+        guard !wantsJSON else { return response }
+
+        let contentType = response.headers.first(name: .contentType) ?? ""
+        guard contentType.contains("application/json") else { return response }
+        guard let body = response.body.data else { return response }
+
+        let json = try JSONSerialization.jsonObject(with: body) as? [String: Any] ?? [:]
+
+        if let ok = json["ok"] as? Bool, !ok {
+            let message = json["error"] as? String ?? "Unknown error"
+            return markdownResponse("**Error:** \(message)")
+        }
+
+        let result = json["result"]
+        let markdown = jsonToMarkdown(result)
+
+        return markdownResponse(markdown)
+    }
+
+    private func markdownResponse(_ text: String) -> Response {
+        var headers = HTTPHeaders()
+        headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
+        return Response(status: .ok, headers: headers, body: .init(string: text))
+    }
+}
+
+func jsonToMarkdown(_ value: Any?) -> String {
+    guard let value else { return "No results." }
+
+    if let dict = value as? [String: Any], let help = dict["help"] as? String {
+        return help
+    }
+
+    if let array = value as? [[String: Any]], !array.isEmpty {
+        return arrayToMarkdownTable(array)
+    }
+
+    if let dict = value as? [String: Any] {
+        return objectToKeyValueList(dict)
+    }
+
+    if value is NSNull {
+        return "No results."
+    }
+
+    return "\(value)"
+}
+
+func arrayToMarkdownTable(_ rows: [[String: Any]]) -> String {
+    let keys = rows.first.map { $0.keys.sorted() } ?? []
+    guard !keys.isEmpty else { return "No results." }
+
+    var lines: [String] = []
+    lines.append("| " + keys.joined(separator: " | ") + " |")
+    lines.append("| " + keys.map { _ in "---" }.joined(separator: " | ") + " |")
+
+    for row in rows {
+        let cells = keys.map { formatCellValue(row[$0]) }
+        lines.append("| " + cells.joined(separator: " | ") + " |")
+    }
+
+    return lines.joined(separator: "\n")
+}
+
+func objectToKeyValueList(_ dict: [String: Any]) -> String {
+    guard !dict.isEmpty else { return "No results." }
+    return dict.keys.sorted().map { key in
+        "- **\(key):** \(formatCellValue(dict[key]))"
+    }.joined(separator: "\n")
+}
+
+func formatCellValue(_ value: Any?) -> String {
+    guard let value else { return "" }
+    if value is NSNull { return "" }
+
+    if let dict = value as? [String: Any] {
+        return dict.keys.sorted().map { "\($0): \(formatCellValue(dict[$0]))" }
+            .joined(separator: ", ")
+    }
+
+    if let array = value as? [Any] {
+        return array.map { formatCellValue($0) }.joined(separator: ", ")
+    }
+
+    if let number = value as? NSNumber,
+        CFGetTypeID(number) == CFBooleanGetTypeID()
+    {
+        return number.boolValue ? "true" : "false"
+    }
+
+    return "\(value)".replacingOccurrences(of: "|", with: "\\|")
+        .replacingOccurrences(of: "\n", with: " ")
+}
+
 let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
 let rateLimiter = RateLimiter(limit: rateLimit)
 app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
 app.middleware.use(LoggingMiddleware(log: logger))
+app.middleware.use(FormatMiddleware())
 
 // Help endpoint
 app.get("help") { req -> Response in
     let markdown = """
         # Contacts Bridge API
 
-        HTTP bridge to Apple Contacts (CNContact). All responses return `{"ok": true, "result": ...}` on success.
+        HTTP bridge to Apple Contacts (CNContact).
+
+        ## Response format
+
+        All endpoints return **markdown** by default (tables for lists, key-value for single objects). To get JSON instead, either add `?format=json` to the URL or send an `Accept: application/json` header. JSON responses use `{"ok": true, "result": ...}`.
 
         ## Contact identifiers
 
@@ -128,14 +233,12 @@ app.get("help") { req -> Response in
         Returns: `{"id": "..."}` with the new contact's identifier.
 
         ### GET /health
-        Returns `{"ok": true}` if the bridge is running.
+        Returns bridge status. Use `?format=json` for `{"ok": true, "result": {"status": "ok"}}`.
 
         ### GET /schema
-        Returns machine-readable endpoint definitions (JSON).
+        Returns machine-readable endpoint definitions. Use `?format=json` for structured JSON.
         """
-    var headers = HTTPHeaders()
-    headers.add(name: .contentType, value: "text/markdown; charset=utf-8")
-    return Response(status: .ok, headers: headers, body: .init(string: markdown))
+    return try responseJSON(["ok": true, "result": ["help": markdown]])
 }
 
 // Health check
