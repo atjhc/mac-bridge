@@ -2,41 +2,59 @@
 set -e
 
 # Swift Bridge LaunchAgent Uninstallation Script
-# Stops and unloads CalendarBridge, ContactsBridge, and MailBridge LaunchAgents
+# Usage: ./scripts/uninstall.sh [bridge...]
+# Examples:
+#   ./scripts/uninstall.sh                # uninstall all
+#   ./scripts/uninstall.sh calendar       # uninstall one
+#   ./scripts/uninstall.sh mail contacts  # uninstall specific ones
 
 TARGET_DIR="$HOME/Library/LaunchAgents"
 
-RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
+RED='\033[0;31m'
 BOLD='\033[1m'
 RESET='\033[0m'
+
+# Map short names to launchd labels
+resolve_label() {
+    case "$1" in
+        calendar) echo "com.user.calendar-bridge-swift" ;;
+        contacts) echo "com.user.contacts-bridge-swift" ;;
+        mail)     echo "com.user.mail-bridge-swift" ;;
+        *) echo -e "${RED}Unknown bridge: $1${RESET}" >&2; return 1 ;;
+    esac
+}
+
+if [ $# -gt 0 ]; then
+    labels=()
+    for name in "$@"; do
+        labels+=("$(resolve_label "$name")") || exit 1
+    done
+else
+    labels=(
+        "com.user.calendar-bridge-swift"
+        "com.user.contacts-bridge-swift"
+        "com.user.mail-bridge-swift"
+    )
+fi
 
 echo -e "${BOLD}Swift Bridge LaunchAgent Uninstaller${RESET}"
 echo "====================================="
 echo
 
-services=(
-    "com.user.calendar-bridge-swift"
-    "com.user.contacts-bridge-swift"
-    "com.user.mail-bridge-swift"
-)
-
-for label in "${services[@]}"; do
+for label in "${labels[@]}"; do
     plist="$TARGET_DIR/$label.plist"
 
     if [ -f "$plist" ]; then
         echo "Removing $label..."
 
-        # Stop the service
         echo "  Stopping service..."
         launchctl stop "$label" 2>/dev/null || true
 
-        # Unload the plist
         echo "  Unloading service..."
         launchctl unload "$plist" 2>/dev/null || true
 
-        # Remove the plist
         echo "  Removing plist..."
         rm "$plist"
 
