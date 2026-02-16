@@ -27,6 +27,12 @@ let package = Package(
             dependencies: [
                 .product(name: "Vapor", package: "vapor")
             ]
+        ),
+        .executableTarget(
+            name: "ThingsBridge",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor")
+            ]
         )
     ]
 )
