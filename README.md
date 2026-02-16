@@ -1,56 +1,25 @@
-# Swift Bridge
+# Mac Bridge
 
-Native Swift bridges for macOS applications using system frameworks.
+Native Swift HTTP bridges for macOS applications. Each bridge exposes a local REST API backed by native frameworks (EventKit, Contacts) or ScriptingBridge, giving 10-100x performance over AppleScript/JXA with better reliability.
+
+Built on [Vapor](https://vapor.codes). Requires macOS 14+.
 
 ## Bridges
 
-### Calendar Bridge (Port 7334)
-Uses EventKit framework for fast, reliable Calendar.app access.
+| Bridge | Port | Framework | App |
+| --- | --- | --- | --- |
+| CalendarBridge | 7334 | EventKit | Calendar |
+| ContactsBridge | 7335 | Contacts | Contacts |
+| MailBridge | 7333 | ScriptingBridge | Mail |
+| ThingsBridge | 7332 | ScriptingBridge | Things 3 |
+| NotesBridge | 7336 | ScriptingBridge | Notes |
+| NetNewsWireBridge | 7331 | ScriptingBridge | NetNewsWire |
 
-**Endpoints:**
-- `GET /calendars` - List all calendars
-- `GET /events` - List events (supports filters: calendar, from, to, limit, status, siri)
-- `GET /event?id=...` - Get single event details
-- `POST /events` - Create new event
-- `POST /events/delete` - Delete events
+Every bridge provides `/help` (markdown API docs), `/health`, and `/schema` (machine-readable endpoint definitions).
 
-**Environment:**
-- `CALENDAR_BRIDGE_PORT` - Port to listen on (default: 7334)
-- `DEBUG` - Enable debug logging (1 or 0)
-- `RATE_LIMIT_PER_SECOND` - Max requests per IP per second (default: 10)
+### Response format
 
-### Contacts Bridge (Port 7335)
-Uses Contacts framework for fast, reliable Contacts.app access.
-
-**Endpoints:**
-- `GET /contacts` - List contacts (supports search, limit)
-- `GET /contact?id=...` - Get single contact details
-- `GET /search?email=...&phone=...` - Search by email or phone
-- `POST /contacts` - Create new contact
-
-**Environment:**
-- `CONTACTS_BRIDGE_PORT` - Port to listen on (default: 7335)
-- `DEBUG` - Enable debug logging (1 or 0)
-- `RATE_LIMIT_PER_SECOND` - Max requests per IP per second (default: 10)
-
-### Mail Bridge (Port 7333)
-Uses ScriptingBridge framework for reliable Mail.app access.
-
-**Endpoints:**
-- `GET /accounts` - List email accounts
-- `GET /mailboxes` - List mailboxes (supports account filter)
-- `GET /messages` - List messages (supports filters: mailbox, account, unread, flagged, search, limit, offset)
-- `GET /message?id=...` - Get single message with content (supports includeSource for raw email)
-- `POST /messages/read` - Mark messages as read/unread
-- `POST /messages/flag` - Flag/unflag messages
-- `POST /messages/move` - Move messages to another mailbox
-- `POST /messages/delete` - Delete messages
-- `POST /compose` - Compose and send email
-
-**Environment:**
-- `MAIL_BRIDGE_PORT` - Port to listen on (default: 7333)
-- `DEBUG` - Enable debug logging (1 or 0)
-- `RATE_LIMIT_PER_SECOND` - Max requests per IP per second (default: 10)
+All endpoints return **markdown** by default (tables for lists, key-value pairs for single objects). Add `?format=json` or send `Accept: application/json` to get JSON responses in `{"ok": true, "result": ...}` format.
 
 ## Building
 
@@ -58,72 +27,93 @@ Uses ScriptingBridge framework for reliable Mail.app access.
 swift build -c release
 ```
 
-Binaries will be in `.build/release/`:
-- `CalendarBridge`
-- `ContactsBridge`
-- `MailBridge`
+Binaries are output to `.build/release/`.
+
+## Testing
+
+```bash
+swift test
+```
+
+The `BridgeCore` library has unit tests covering markdown conversion, cell formatting (including boolean detection), and rate limiting.
 
 ## Running
 
 ### Development
+
 ```bash
-# Calendar
+# Run any bridge directly
 .build/release/CalendarBridge
 
-# Contacts
-CONTACTS_BRIDGE_PORT=7335 .build/release/ContactsBridge
-
-# Mail
+# Override port via environment
 MAIL_BRIDGE_PORT=7333 .build/release/MailBridge
 ```
 
 ### Production (LaunchAgents)
 
-**Install and start services:**
 ```bash
+# Install and start services
 ./scripts/install.sh
-```
 
-This will:
-- Copy plists from `launchd/` to `~/Library/LaunchAgents/`
-- Load and start CalendarBridge, ContactsBridge, and MailBridge
-- Verify services are running
-
-**Uninstall services:**
-```bash
+# Uninstall services
 ./scripts/uninstall.sh
 ```
 
-**Manual control:**
+Manual control:
 ```bash
-# Restart a service
 launchctl stop com.user.calendar-bridge-swift
 launchctl start com.user.calendar-bridge-swift
 
 # View logs
 tail -f ~/Library/Logs/calendar-bridge.log
-tail -f ~/Library/Logs/contacts-bridge.log
-tail -f ~/Library/Logs/mail-bridge.log
 ```
 
-## Why Swift?
+## Project structure
 
-These bridges use native macOS frameworks (EventKit, Contacts) or ScriptingBridge instead of AppleScript/JXA:
-- **10-100x faster** than AppleScript for native frameworks
-- **More reliable** - no scripting quirks or timeouts
-- **Better error handling** - proper Swift error types
-- **Type safety** - compile-time guarantees
-- **Full API access** - no scripting limitations
+```
+Sources/
+  BridgeCore/             # Shared library
+    Markdown.swift        # JSON-to-markdown conversion
+    Middleware.swift       # FormatMiddleware, LoggingMiddleware, RateLimitMiddleware
+    RateLimiter.swift     # Per-IP rate limiting actor
+    Response.swift        # responseJSON() helper
+  CalendarBridge/         # EventKit bridge (port 7334)
+    CalendarAPI.swift
+    main.swift
+  ContactsBridge/         # Contacts bridge (port 7335)
+    ContactsAPI.swift
+    main.swift
+  MailBridge/             # ScriptingBridge bridge (port 7333)
+    Mail.h
+    MailBridgeAPI.swift
+    main.swift
+  ThingsBridge/           # ScriptingBridge bridge (port 7332)
+    ThingsAPI.swift
+    main.swift
+  NotesBridge/            # ScriptingBridge bridge (port 7336)
+    NotesAPI.swift
+    main.swift
+  NetNewsWireBridge/      # ScriptingBridge bridge (port 7331)
+    NetNewsWireAPI.swift
+    main.swift
+Tests/
+  BridgeCoreTests/        # Unit tests for shared library
+launchd/                  # LaunchAgent plist templates
+scripts/
+  install.sh
+  uninstall.sh
+  format.sh
+```
 
-**Frameworks used:**
-- **EventKit** (Calendar) - Direct framework access
-- **Contacts** (Contacts) - Direct framework access
-- **ScriptingBridge** (Mail) - Native Swift/ObjC bindings to scriptable apps
+## Environment variables
 
-## Adding New Bridges
+- `{BRIDGE_NAME}_PORT` - Port number (e.g. `CALENDAR_BRIDGE_PORT=7334`)
+- `RATE_LIMIT_PER_SECOND` - Max requests per IP per second (default: 10)
+- `ARCHIVE_MAILBOXES` - Mail bridge archive mailbox config (format: `Account1=Mailbox,Account2=Mailbox`)
 
-1. Create `Sources/NewBridge/` directory
-2. Add `NewBridgeAPI.swift` with framework logic
-3. Add `main.swift` with Vapor HTTP server
-4. Update `Package.swift` to add new executable target
-5. Create LaunchAgent plist in `~/Library/LaunchAgents/`
+## Adding a new bridge
+
+1. Create `Sources/NewBridge/NewBridgeAPI.swift` with framework logic
+2. Create `Sources/NewBridge/main.swift` with Vapor routes (import BridgeCore for shared middleware/helpers)
+3. Add executable target to `Package.swift` with `BridgeCore` dependency
+4. Create LaunchAgent plist in `launchd/`
