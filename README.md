@@ -51,7 +51,7 @@ MAIL_BRIDGE_PORT=7333 .build/release/MailBridge
 
 ### Production (LaunchAgents)
 
-All scripts accept optional bridge names (`calendar`, `contacts`, `mail`). No arguments means all bridges.
+All scripts accept optional bridge names (`calendar`, `contacts`, `mail`, `things`, `notes`, `nnw`). No arguments means all bridges.
 
 ```bash
 # Install and start services

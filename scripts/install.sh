@@ -23,9 +23,12 @@ RESET='\033[0m'
 resolve() {
     local label binary port
     case "$1" in
-        calendar) label="com.user.calendar-bridge-swift" binary="CalendarBridge" port=7334 ;;
-        contacts) label="com.user.contacts-bridge-swift" binary="ContactsBridge" port=7335 ;;
-        mail)     label="com.user.mail-bridge-swift"     binary="MailBridge"     port=7333 ;;
+        calendar) label="com.user.calendar-bridge-swift" binary="CalendarBridge"     port=7334 ;;
+        contacts) label="com.user.contacts-bridge-swift" binary="ContactsBridge"     port=7335 ;;
+        mail)     label="com.user.mail-bridge-swift"     binary="MailBridge"          port=7333 ;;
+        things)   label="com.user.things-bridge-swift"   binary="ThingsBridge"        port=7332 ;;
+        notes)    label="com.user.notes-bridge-swift"    binary="NotesBridge"         port=7336 ;;
+        nnw)      label="com.user.nnw-bridge-swift"      binary="NetNewsWireBridge"   port=7331 ;;
         *) echo -e "${RED}Unknown bridge: $1${RESET}" >&2; return 1 ;;
     esac
     echo "$label $binary $port"
@@ -35,7 +38,7 @@ resolve() {
 if [ $# -gt 0 ]; then
     bridges=("$@")
 else
-    bridges=(calendar contacts mail)
+    bridges=(calendar contacts mail things notes nnw)
 fi
 
 echo -e "${BOLD}Swift Bridge LaunchAgent Installer${RESET}"

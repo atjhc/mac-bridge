@@ -92,7 +92,7 @@ Responses are JSON by default (`{"ok": true, "result": ...}`). The `FormatMiddle
 
 ## Deployment
 
-All scripts accept optional bridge short names (`calendar`, `contacts`, `mail`). No arguments means all bridges.
+All scripts accept optional bridge short names (`calendar`, `contacts`, `mail`, `things`, `notes`, `nnw`). No arguments means all bridges.
 
 ```bash
 swift build -c release

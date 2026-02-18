@@ -22,6 +22,9 @@ resolve_label() {
         calendar) echo "com.user.calendar-bridge-swift" ;;
         contacts) echo "com.user.contacts-bridge-swift" ;;
         mail)     echo "com.user.mail-bridge-swift" ;;
+        things)   echo "com.user.things-bridge-swift" ;;
+        notes)    echo "com.user.notes-bridge-swift" ;;
+        nnw)      echo "com.user.nnw-bridge-swift" ;;
         *)        echo "$1" ;;
     esac
 }
@@ -36,6 +39,9 @@ else
         "com.user.calendar-bridge-swift"
         "com.user.contacts-bridge-swift"
         "com.user.mail-bridge-swift"
+        "com.user.things-bridge-swift"
+        "com.user.notes-bridge-swift"
+        "com.user.nnw-bridge-swift"
     )
 fi
 
