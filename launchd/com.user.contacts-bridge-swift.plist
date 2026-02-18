@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/james/Documents/code/swift-bridge/.build/release/ContactsBridge</string>
+        <string>__PROJECT_DIR__/.build/release/ContactsBridge</string>
     </array>
 
     <key>EnvironmentVariables</key>
@@ -27,9 +27,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/james/Library/Logs/contacts-bridge.log</string>
+    <string>__HOME__/Library/Logs/contacts-bridge.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/james/Library/Logs/contacts-bridge.log</string>
+    <string>__HOME__/Library/Logs/contacts-bridge.log</string>
 </dict>
 </plist>

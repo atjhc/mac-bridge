@@ -7,7 +7,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/james/Documents/code/swift-bridge/.build/release/ThingsBridge</string>
+    <string>__PROJECT_DIR__/.build/release/ThingsBridge</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -25,9 +25,9 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/james/Library/Logs/things-bridge.log</string>
+  <string>__HOME__/Library/Logs/things-bridge.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/james/Library/Logs/things-bridge.log</string>
+  <string>__HOME__/Library/Logs/things-bridge.log</string>
 </dict>
 </plist>

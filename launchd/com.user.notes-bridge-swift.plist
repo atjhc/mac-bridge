@@ -7,7 +7,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/james/Documents/code/swift-bridge/.build/release/NotesBridge</string>
+    <string>__PROJECT_DIR__/.build/release/NotesBridge</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -25,9 +25,9 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/james/Library/Logs/notes-bridge.log</string>
+  <string>__HOME__/Library/Logs/notes-bridge.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/james/Library/Logs/notes-bridge.log</string>
+  <string>__HOME__/Library/Logs/notes-bridge.log</string>
 </dict>
 </plist>

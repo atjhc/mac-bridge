@@ -9,7 +9,7 @@ set -e
 #   ./scripts/install.sh mail contacts  # install specific ones
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+export PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 LAUNCHD_DIR="$PROJECT_DIR/launchd"
 TARGET_DIR="$HOME/Library/LaunchAgents"
 
@@ -79,9 +79,9 @@ for name in "${bridges[@]}"; do
         launchctl unload "$target" 2>/dev/null || true
     fi
 
-    # Copy plist
+    # Copy plist, replacing __VARNAME__ placeholders with env vars
     echo "  Copying to $TARGET_DIR/"
-    cp "$plist" "$target"
+    perl -pe 's/__(\w+)__/$ENV{$1}/g' "$plist" > "$target"
 
     # Load and start the service
     echo "  Loading service..."

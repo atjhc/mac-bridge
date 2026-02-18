@@ -7,7 +7,7 @@
 
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/james/Documents/code/swift-bridge/.build/release/NetNewsWireBridge</string>
+    <string>__PROJECT_DIR__/.build/release/NetNewsWireBridge</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -25,9 +25,9 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>/Users/james/Library/Logs/nnw-bridge.log</string>
+  <string>__HOME__/Library/Logs/nnw-bridge.log</string>
 
   <key>StandardErrorPath</key>
-  <string>/Users/james/Library/Logs/nnw-bridge.log</string>
+  <string>__HOME__/Library/Logs/nnw-bridge.log</string>
 </dict>
 </plist>

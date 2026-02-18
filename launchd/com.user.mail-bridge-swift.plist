@@ -7,7 +7,7 @@
 
     <key>ProgramArguments</key>
     <array>
-        <string>/Users/james/Documents/code/swift-bridge/.build/release/MailBridge</string>
+        <string>__PROJECT_DIR__/.build/release/MailBridge</string>
     </array>
 
     <key>EnvironmentVariables</key>
@@ -27,9 +27,9 @@
     <true/>
 
     <key>StandardOutPath</key>
-    <string>/Users/james/Library/Logs/mail-bridge.log</string>
+    <string>__HOME__/Library/Logs/mail-bridge.log</string>
 
     <key>StandardErrorPath</key>
-    <string>/Users/james/Library/Logs/mail-bridge.log</string>
+    <string>__HOME__/Library/Logs/mail-bridge.log</string>
 </dict>
 </plist>
