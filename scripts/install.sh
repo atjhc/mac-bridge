@@ -93,18 +93,22 @@ for name in "${bridges[@]}"; do
     echo
 done
 
-# Wait a moment for services to start
-sleep 2
-
-# Verify services are running
+# Verify services are running (retry up to 10 seconds per bridge)
 echo "Verifying services..."
 echo
 
 for name in "${bridges[@]}"; do
     read -r label binary port <<< "$(resolve "$name")"
-    status=$(curl -s "http://localhost:$port/health" 2>/dev/null | grep -o '"ok":true' || echo "")
+    up=0
+    for i in $(seq 1 20); do
+        if curl -sf "http://localhost:$port/health" >/dev/null 2>&1; then
+            up=1
+            break
+        fi
+        sleep 0.5
+    done
 
-    if [ -n "$status" ]; then
+    if [ "$up" -eq 1 ]; then
         echo -e "  ${GREEN}$binary running on port $port${RESET}"
     else
         echo -e "  ${YELLOW}$binary may not be running (port $port)${RESET}"
