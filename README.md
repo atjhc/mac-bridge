@@ -51,21 +51,31 @@ MAIL_BRIDGE_PORT=7333 .build/release/MailBridge
 
 ### Production (LaunchAgents)
 
+All scripts accept optional bridge names (`calendar`, `contacts`, `mail`). No arguments means all bridges.
+
 ```bash
 # Install and start services
-./scripts/install.sh
+./scripts/install.sh                # all bridges
+./scripts/install.sh calendar mail  # specific bridges
+
+# Start / stop without reinstalling
+./scripts/start.sh
+./scripts/stop.sh contacts
 
 # Uninstall services
 ./scripts/uninstall.sh
 ```
 
-Manual control:
-```bash
-launchctl stop com.user.calendar-bridge-swift
-launchctl start com.user.calendar-bridge-swift
+### Logs
 
-# View logs
+Startup logs (stdout/stderr from launchd):
+```bash
 tail -f ~/Library/Logs/calendar-bridge.log
+```
+
+Request logs (via OSLog):
+```bash
+log stream --predicate 'subsystem == "com.user.bridge"' --level info
 ```
 
 ## Project structure
@@ -100,9 +110,11 @@ Tests/
   BridgeCoreTests/        # Unit tests for shared library
 launchd/                  # LaunchAgent plist templates
 scripts/
-  install.sh
-  uninstall.sh
-  format.sh
+  install.sh              # Install and load LaunchAgents
+  uninstall.sh            # Stop and remove LaunchAgents
+  start.sh                # Start (or restart) services
+  stop.sh                 # Stop services
+  format.sh               # Run swift-format
 ```
 
 ## Environment variables

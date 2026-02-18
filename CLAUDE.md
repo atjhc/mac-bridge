@@ -30,7 +30,7 @@ Sources/
 Tests/
   BridgeCoreTests/        # Unit tests for BridgeCore
 launchd/                  # LaunchAgent plist templates
-scripts/                  # install.sh, uninstall.sh, format.sh
+scripts/                  # install, uninstall, start, stop, format
 ```
 
 Each bridge has two files:
@@ -92,12 +92,15 @@ Responses are JSON by default (`{"ok": true, "result": ...}`). The `FormatMiddle
 
 ## Deployment
 
+All scripts accept optional bridge short names (`calendar`, `contacts`, `mail`). No arguments means all bridges.
+
 ```bash
 swift build -c release
-./scripts/install.sh     # Copies plists to ~/Library/LaunchAgents/, loads services
-./scripts/uninstall.sh   # Stops and removes services
+./scripts/install.sh [bridge...]    # Copy plists to ~/Library/LaunchAgents/, load services
+./scripts/uninstall.sh [bridge...]  # Stop and remove services
+./scripts/start.sh [bridge...]      # Start (or restart) services
+./scripts/stop.sh [bridge...]       # Stop services
 ```
 
-Logs: `~/Library/Logs/{bridge}.log`
-
-Manual restart: `launchctl stop com.user.{bridge}-swift && launchctl start com.user.{bridge}-swift`
+Startup logs: `~/Library/Logs/{bridge}-bridge.log` (stdout/stderr from launchd)
+Request logs: `log stream --predicate 'subsystem == "com.user.bridge"' --level info`
