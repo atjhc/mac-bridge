@@ -78,14 +78,9 @@ app.get("help") { req -> Response in
 
 // Health check
 app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "contacts-bridge",
-        ],
-    ]
-    return try responseJSON(response)
+    var result = contactsAPI.checkHealth()
+    result["app"] = "contacts-bridge"
+    return try responseJSON(["ok": true, "result": result])
 }
 
 // Schema endpoint

@@ -79,14 +79,9 @@ app.get("help") { req -> Response in
 
 // Health check
 app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "calendar-bridge",
-        ],
-    ]
-    return try responseJSON(response)
+    var result = calendarAPI.checkHealth()
+    result["app"] = "calendar-bridge"
+    return try responseJSON(["ok": true, "result": result])
 }
 
 // Schema endpoint

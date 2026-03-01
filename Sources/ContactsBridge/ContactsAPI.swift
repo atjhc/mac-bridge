@@ -25,6 +25,16 @@ class ContactsAPI {
         }
     }
 
+    func checkHealth() -> [String: Any] {
+        guard hasAccess else {
+            return [
+                "status": "error", "accessGranted": false,
+                "error": "Contacts access not granted",
+            ]
+        }
+        return ["status": "ok", "accessGranted": true]
+    }
+
     private func ensureAccess() throws {
         guard hasAccess else {
             throw NSError(

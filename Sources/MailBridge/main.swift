@@ -136,14 +136,22 @@ app.get("help") { req -> Response in
 
 // Health check
 app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "mail-bridge",
-        ],
+    let health = checkAppHealth(bundleIdentifier: "com.apple.mail")
+    var result: [String: Any] = [
+        "app": "mail-bridge",
+        "appInstalled": health.installed,
+        "appRunning": health.running,
     ]
-    return try responseJSON(response)
+    if health.isHealthy {
+        result["status"] = "ok"
+    } else if !health.installed {
+        result["status"] = "error"
+        result["error"] = "Mail.app is not installed"
+    } else {
+        result["status"] = "error"
+        result["error"] = "Mail.app is not running"
+    }
+    return try responseJSON(["ok": true, "result": result])
 }
 
 // Schema endpoint

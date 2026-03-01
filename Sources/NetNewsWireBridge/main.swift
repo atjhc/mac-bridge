@@ -94,14 +94,22 @@ app.get("help") { req -> Response in
 
 // Health check
 app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "nnw-bridge",
-        ],
+    let health = checkAppHealth(bundleIdentifier: "com.ranchero.NetNewsWire-Evergreen")
+    var result: [String: Any] = [
+        "app": "nnw-bridge",
+        "appInstalled": health.installed,
+        "appRunning": health.running,
     ]
-    return try responseJSON(response)
+    if health.isHealthy {
+        result["status"] = "ok"
+    } else if !health.installed {
+        result["status"] = "error"
+        result["error"] = "NetNewsWire is not installed"
+    } else {
+        result["status"] = "error"
+        result["error"] = "NetNewsWire is not running"
+    }
+    return try responseJSON(["ok": true, "result": result])
 }
 
 // Schema endpoint
