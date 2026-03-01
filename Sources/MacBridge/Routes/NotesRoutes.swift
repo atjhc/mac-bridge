@@ -59,6 +59,12 @@ func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI) {
             - `name` — new title
             - `body` — new body (HTML supported)
 
+            ### POST /notes/notes/move
+            Move notes to a different folder.
+            - `ids` (required) — array of note ID strings
+            - `folder` (required) — destination folder name
+            - `account` — account name (if ambiguous)
+
             ### POST /notes/notes/delete
             Delete notes by ID.
             - `ids` (required) — array of note ID strings
@@ -144,6 +150,18 @@ func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI) {
                             ["name": "id", "from": "body", "type": "string", "required": true],
                             ["name": "name", "from": "body", "type": "string"],
                             ["name": "body", "from": "body", "type": "string"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/notes/notes/move",
+                        "params": [
+                            ["name": "ids", "from": "body", "type": "string[]", "required": true],
+                            [
+                                "name": "folder", "from": "body", "type": "string",
+                                "required": true,
+                            ],
+                            ["name": "account", "from": "body", "type": "string"],
                         ],
                     ],
                     [
@@ -237,6 +255,18 @@ func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI) {
 
         let body = try req.content.decode(UpdateNoteRequest.self)
         let result = try await api.updateNote(id: body.id, name: body.name, body: body.body)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("notes", "move") { req async throws -> Response in
+        struct MoveNotesRequest: Content {
+            let ids: [String]
+            let folder: String
+            let account: String?
+        }
+
+        let body = try req.content.decode(MoveNotesRequest.self)
+        let result = try await api.moveNotes(ids: body.ids, folder: body.folder, account: body.account)
         return try responseJSON(["ok": true, "result": result])
     }
 

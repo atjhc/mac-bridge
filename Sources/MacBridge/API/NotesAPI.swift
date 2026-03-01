@@ -234,6 +234,43 @@ class NotesAPI {
         return try await runJXA(script) ?? ["updated": false]
     }
 
+    // MARK: - Move
+
+    func moveNotes(ids: [String], folder: String, account: String?) async throws -> Any {
+        let idsJS =
+            try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
+        let accountFilter = account.map { escapeJSString($0) } ?? "null"
+        let script = """
+            const app = Application('Notes');
+            const ids = \(idsJS);
+            const folderName = \(escapeJSString(folder));
+            const accountName = \(accountFilter);
+            let targetFolder = null;
+            if (accountName) {
+              const acct = app.accounts().find(a => a.name() === accountName);
+              if (acct) targetFolder = acct.folders().find(f => f.name() === folderName);
+            } else {
+              targetFolder = app.folders().find(f => f.name() === folderName);
+            }
+            if (!targetFolder) {
+              JSON.stringify({ moved: 0, error: "Folder not found: " + folderName });
+            } else {
+              let moved = 0;
+              for (const id of ids) {
+                try {
+                  const note = app.notes.byId(id);
+                  if (note) {
+                    app.move(note, { to: targetFolder });
+                    moved++;
+                  }
+                } catch {}
+              }
+              JSON.stringify({ moved });
+            }
+            """
+        return try await runJXA(script) ?? ["moved": 0]
+    }
+
     // MARK: - Delete
 
     func deleteNotes(ids: [String]) async throws -> Any {
