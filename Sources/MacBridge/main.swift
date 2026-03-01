@@ -3,7 +3,7 @@ import Foundation
 import OSLog
 import Vapor
 
-let logger = os.Logger(subsystem: "com.user.bridge", category: "macbridge")
+let logger = os.Logger(subsystem: "com.user.mac-bridge", category: "macbridge")
 
 let app = try Application(.detect())
 defer { app.shutdown() }

@@ -102,4 +102,4 @@ swift build -c release
 ```
 
 Startup logs: `~/Library/Logs/macbridge.log` (stdout/stderr from launchd)
-Request logs: `log stream --predicate 'subsystem == "com.user.bridge"' --level info`
+Request logs: `log stream --predicate 'subsystem == "com.user.mac-bridge"' --level info`

@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-private let log = Logger(subsystem: "com.user.bridge", category: "reminders")
+private let log = Logger(subsystem: "com.user.mac-bridge", category: "reminders")
 
 class RemindersAPI {
 

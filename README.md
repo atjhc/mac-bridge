@@ -81,7 +81,7 @@ tail -f ~/Library/Logs/macbridge.log
 
 Request logs (via OSLog):
 ```bash
-log stream --predicate 'subsystem == "com.user.bridge"' --level info
+log stream --predicate 'subsystem == "com.user.mac-bridge"' --level info
 ```
 
 ## Project structure

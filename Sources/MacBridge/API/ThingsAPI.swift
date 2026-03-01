@@ -1,7 +1,7 @@
 import Foundation
 import OSLog
 
-private let log = Logger(subsystem: "com.user.bridge", category: "things")
+private let log = Logger(subsystem: "com.user.mac-bridge", category: "things")
 
 class ThingsAPI {
 

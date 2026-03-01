@@ -2,7 +2,7 @@ import Contacts
 import Foundation
 import OSLog
 
-private let log = Logger(subsystem: "com.user.bridge", category: "contacts")
+private let log = Logger(subsystem: "com.user.mac-bridge", category: "contacts")
 
 class ContactsAPI {
     private let store = CNContactStore()

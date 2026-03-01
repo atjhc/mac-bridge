@@ -2,7 +2,7 @@ import EventKit
 import Foundation
 import OSLog
 
-private let log = Logger(subsystem: "com.user.bridge", category: "calendar")
+private let log = Logger(subsystem: "com.user.mac-bridge", category: "calendar")
 
 class CalendarAPI {
     private let eventStore = EKEventStore()
