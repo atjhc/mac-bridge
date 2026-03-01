@@ -24,6 +24,7 @@ Sources/
   MacBridge/
     main.swift            # Entry point, global middleware, root endpoints
     BridgeError.swift     # Shared error type for JXA bridges
+    Config.swift          # Config file + env var loading
     API/                  # Framework integration and business logic (one per bridge)
     Routes/               # Route registration functions (one per bridge)
 Tests/
@@ -86,7 +87,7 @@ Responses are JSON by default (`{"ok": true, "result": ...}`). The `FormatMiddle
 
 - Endpoint naming: `GET /prefix/resources` (list), `GET /prefix/resource?id=...` (single), `POST /prefix/resources` (create), `POST /prefix/resources/delete` (delete)
 - Error responses: `Abort(.badRequest, reason: "...")` for validation; `{"ok": false, "error": "..."}` for operation failures
-- Environment variables: `MACBRIDGE_PORT` for port (default: 7330), `RATE_LIMIT_PER_SECOND` for rate limit (default: 10), `MACBRIDGE_DISABLED` to skip bridges (comma-separated prefixes, e.g. `nnw,things`)
+- Configuration: `~/.config/mac-bridge/config` file with `key = value` lines (see `Config.swift`). Env vars override file values: `MACBRIDGE_PORT`, `MACBRIDGE_RATE_LIMIT`, `MACBRIDGE_DISABLED`, `MACBRIDGE_ARCHIVE_MAILBOXES`
 - ScriptingBridge headers: generate with `sdef /path/to/App.app | sdp -fh --basename AppName`
 - Never use clang-format on Swift — use `swift-format` (configured in `.swift-format`)
 

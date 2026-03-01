@@ -97,6 +97,7 @@ Sources/
   MacBridge/
     main.swift            # Entry point, global middleware, root endpoints
     BridgeError.swift     # Shared error type for JXA bridges
+    Config.swift          # Config file + env var loading
     API/                  # Framework integration and business logic (one per bridge)
     Routes/               # Route registration functions (one per bridge)
 Tests/
@@ -110,12 +111,40 @@ scripts/
   format.sh               # Run swift-format
 ```
 
-## Environment variables
+## Configuration
 
-- `MACBRIDGE_PORT` — Port number (default: 7330)
-- `MACBRIDGE_DISABLED` — Comma-separated list of bridge prefixes to disable (e.g. `nnw,things`)
-- `RATE_LIMIT_PER_SECOND` — Max requests per IP per second (default: 10)
-- `ARCHIVE_MAILBOXES` — Mail bridge archive mailbox config (format: `Account1=Mailbox,Account2=Mailbox`)
+Settings are read from `~/.config/mac-bridge/config` (if it exists), then overridden by environment variables.
+
+### Config file
+
+Simple `key = value` format. Blank lines and `#` comments are ignored.
+
+```
+# ~/.config/mac-bridge/config
+
+port = 7330
+rate-limit = 10
+disabled = nnw, things
+archive-mailboxes = Work=Archive, Personal=All Mail
+```
+
+### Keys
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `port` | `7330` | Port number |
+| `rate-limit` | `10` | Max requests per IP per second |
+| `disabled` | _(none)_ | Comma-separated bridge prefixes to disable (e.g. `nnw, things`) |
+| `archive-mailboxes` | _(none)_ | Mail archive mailbox mapping (format: `Account=Mailbox, Account2=Mailbox`) |
+
+### Environment variables
+
+Environment variables override config file values:
+
+- `MACBRIDGE_PORT` → `port`
+- `MACBRIDGE_RATE_LIMIT` → `rate-limit`
+- `MACBRIDGE_DISABLED` → `disabled`
+- `MACBRIDGE_ARCHIVE_MAILBOXES` → `archive-mailboxes`
 
 ## Adding a new bridge
 

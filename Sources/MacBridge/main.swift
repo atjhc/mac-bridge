@@ -10,8 +10,9 @@ defer { app.shutdown() }
 
 app.logger.logLevel = .notice
 
-let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
-let rateLimiter = RateLimiter(limit: rateLimit)
+let config = Config.load()
+
+let rateLimiter = RateLimiter(limit: config.rateLimit)
 app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
 app.middleware.use(LoggingMiddleware(log: logger))
 app.middleware.use(FormatMiddleware())
@@ -39,17 +40,6 @@ func buildAppHealthResult(
     return result
 }
 
-// --- Disabled bridges ---
-
-let disabledBridges: Set<String> = {
-    guard let value = Environment.get("MACBRIDGE_DISABLED") else { return [] }
-    return Set(value.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces).lowercased() })
-}()
-
-func isEnabled(_ prefix: String) -> Bool {
-    !disabledBridges.contains(prefix)
-}
-
 // --- Bridge registration ---
 
 struct BridgeInfo {
@@ -60,27 +50,21 @@ struct BridgeInfo {
 
 var bridges: [BridgeInfo] = []
 
-if isEnabled("calendar") {
+if config.isEnabled("calendar") {
     let calendarAPI = CalendarAPI()
     registerCalendarRoutes(on: app.grouped("calendar"), api: calendarAPI)
     bridges.append(BridgeInfo(prefix: "calendar", name: "Calendar") { calendarAPI.checkHealth() })
 }
 
-if isEnabled("contacts") {
+if config.isEnabled("contacts") {
     let contactsAPI = ContactsAPI()
     registerContactsRoutes(on: app.grouped("contacts"), api: contactsAPI)
     bridges.append(BridgeInfo(prefix: "contacts", name: "Contacts") { contactsAPI.checkHealth() })
 }
 
-if isEnabled("mail") {
+if config.isEnabled("mail") {
     let mailAPI = MailBridgeAPI()
-    if let archiveConfig = Environment.get("ARCHIVE_MAILBOXES") {
-        for entry in archiveConfig.split(separator: ",") {
-            let parts = entry.split(separator: "=", maxSplits: 1)
-            guard parts.count == 2 else { continue }
-            mailAPI.archiveMailboxes[String(parts[0])] = String(parts[1])
-        }
-    }
+    mailAPI.archiveMailboxes = config.archiveMailboxes
     registerMailRoutes(on: app.grouped("mail"), api: mailAPI)
     bridges.append(BridgeInfo(prefix: "mail", name: "Mail") {
         buildAppHealthResult(
@@ -91,7 +75,7 @@ if isEnabled("mail") {
     })
 }
 
-if isEnabled("things") {
+if config.isEnabled("things") {
     let thingsAPI = ThingsAPI()
     registerThingsRoutes(on: app.grouped("things"), api: thingsAPI)
     bridges.append(BridgeInfo(prefix: "things", name: "Things") {
@@ -103,7 +87,7 @@ if isEnabled("things") {
     })
 }
 
-if isEnabled("notes") {
+if config.isEnabled("notes") {
     let notesAPI = NotesAPI()
     registerNotesRoutes(on: app.grouped("notes"), api: notesAPI)
     bridges.append(BridgeInfo(prefix: "notes", name: "Notes") {
@@ -115,7 +99,7 @@ if isEnabled("notes") {
     })
 }
 
-if isEnabled("nnw") {
+if config.isEnabled("nnw") {
     let nnwAPI = NetNewsWireAPI()
     registerNetNewsWireRoutes(on: app.grouped("nnw"), api: nnwAPI)
     bridges.append(BridgeInfo(prefix: "nnw", name: "NetNewsWire") {
@@ -127,7 +111,7 @@ if isEnabled("nnw") {
     })
 }
 
-if isEnabled("reminders") {
+if config.isEnabled("reminders") {
     let remindersAPI = RemindersAPI()
     registerRemindersRoutes(on: app.grouped("reminders"), api: remindersAPI)
     bridges.append(BridgeInfo(prefix: "reminders", name: "Reminders") {
@@ -139,7 +123,7 @@ if isEnabled("reminders") {
     })
 }
 
-if isEnabled("messages") {
+if config.isEnabled("messages") {
     let messagesAPI = MessagesAPI()
     registerMessagesRoutes(on: app.grouped("messages"), api: messagesAPI)
     bridges.append(BridgeInfo(prefix: "messages", name: "Messages") {
@@ -151,7 +135,7 @@ if isEnabled("messages") {
     })
 }
 
-if isEnabled("shortcuts") {
+if config.isEnabled("shortcuts") {
     let shortcutsAPI = ShortcutsAPI()
     registerShortcutsRoutes(on: app.grouped("shortcuts"), api: shortcutsAPI)
     bridges.append(BridgeInfo(prefix: "shortcuts", name: "Shortcuts") {
@@ -163,8 +147,8 @@ if isEnabled("shortcuts") {
     })
 }
 
-if !disabledBridges.isEmpty {
-    logger.notice("Disabled bridges: \(disabledBridges.sorted().joined(separator: ", "))")
+if !config.disabled.isEmpty {
+    logger.notice("Disabled bridges: \(config.disabled.sorted().joined(separator: ", "))")
 }
 
 app.get { req -> Response in
@@ -241,9 +225,8 @@ app.get("help") { req -> Response in
     return try responseJSON(["ok": true, "result": ["help": markdown]])
 }
 
-let port = Int(Environment.get("MACBRIDGE_PORT") ?? "7330") ?? 7330
 app.http.server.configuration.hostname = "0.0.0.0"
-app.http.server.configuration.port = port
+app.http.server.configuration.port = config.port
 
-logger.notice("Listening on http://localhost:\(port)")
+logger.notice("Listening on http://localhost:\(config.port)")
 try app.run()
