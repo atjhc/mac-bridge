@@ -142,12 +142,12 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI) {
         return try responseJSON(schema)
     }
 
-    routes.get("lists") { req throws -> Response in
-        let lists = try api.getLists()
+    routes.get("lists") { req async throws -> Response in
+        let lists = try await api.getLists()
         return try responseJSON(["ok": true, "result": lists])
     }
 
-    routes.get("reminders") { req throws -> Response in
+    routes.get("reminders") { req async throws -> Response in
         let listId = req.query[String.self, at: "listId"]
         let completed: Bool?
         if let completedStr = req.query[String.self, at: "completed"] {
@@ -157,19 +157,19 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI) {
         }
         let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
 
-        let reminders = try api.getReminders(listId: listId, completed: completed, limit: limit)
+        let reminders = try await api.getReminders(listId: listId, completed: completed, limit: limit)
         return try responseJSON(["ok": true, "result": reminders])
     }
 
-    routes.get("reminder") { req throws -> Response in
+    routes.get("reminder") { req async throws -> Response in
         guard let id = req.query[String.self, at: "id"] else {
             throw Abort(.badRequest, reason: "'id' parameter is required")
         }
-        let reminder = try api.getReminder(id: id)
+        let reminder = try await api.getReminder(id: id)
         return try responseJSON(["ok": true, "result": reminder as Any])
     }
 
-    routes.post("reminders") { req throws -> Response in
+    routes.post("reminders") { req async throws -> Response in
         struct CreateReminderRequest: Content {
             let name: String
             let notes: String?
@@ -181,31 +181,31 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI) {
         }
 
         let body = try req.content.decode(CreateReminderRequest.self)
-        let result = try api.createReminder(
+        let result = try await api.createReminder(
             name: body.name, notes: body.notes, listId: body.listId,
             dueDate: body.dueDate, remindMeDate: body.remindMeDate,
             priority: body.priority, flagged: body.flagged)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("reminders", "complete") { req throws -> Response in
+    routes.post("reminders", "complete") { req async throws -> Response in
         struct CompleteRequest: Content {
             let ids: [String]
             let completed: Bool
         }
 
         let body = try req.content.decode(CompleteRequest.self)
-        let result = try api.completeReminders(ids: body.ids, completed: body.completed)
+        let result = try await api.completeReminders(ids: body.ids, completed: body.completed)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("reminders", "delete") { req throws -> Response in
+    routes.post("reminders", "delete") { req async throws -> Response in
         struct DeleteRequest: Content {
             let ids: [String]
         }
 
         let body = try req.content.decode(DeleteRequest.self)
-        let result = try api.deleteReminders(ids: body.ids)
+        let result = try await api.deleteReminders(ids: body.ids)
         return try responseJSON(["ok": true, "result": result])
     }
 }

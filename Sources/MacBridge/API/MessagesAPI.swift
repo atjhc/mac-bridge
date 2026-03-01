@@ -7,7 +7,7 @@ class MessagesAPI {
 
     // MARK: - JXA execution
 
-    private func runJXA(_ script: String) throws -> Any? {
+    private func runJXA(_ script: String, timeout: TimeInterval = 30) async throws -> Any? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         proc.arguments = ["-l", "JavaScript", "-e", script]
@@ -17,8 +17,24 @@ class MessagesAPI {
         proc.standardOutput = stdout
         proc.standardError = stderr
 
+        let exited = AsyncStream<Void> { cont in
+            proc.terminationHandler = { _ in
+                cont.yield()
+                cont.finish()
+            }
+        }
         try proc.run()
-        proc.waitUntilExit()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { for await _ in exited { break } }
+            group.addTask {
+                do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
+                proc.terminate()
+                throw BridgeError.scriptFailed("Script timed out after \(Int(timeout))s")
+            }
+            try await group.next()
+            group.cancelAll()
+        }
 
         guard proc.terminationStatus == 0 else {
             let errStr = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -33,7 +49,7 @@ class MessagesAPI {
 
     // MARK: - Chats
 
-    func getChats() throws -> Any {
+    func getChats() async throws -> Any {
         let script = """
             const app = Application('Messages');
             JSON.stringify(app.chats().map(c => {
@@ -46,10 +62,10 @@ class MessagesAPI {
               };
             }));
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
-    func getChat(id: String) throws -> Any? {
+    func getChat(id: String) async throws -> Any? {
         let script = """
             const app = Application('Messages');
             const c = app.chats.byId(\(escapeJSString(id)));
@@ -68,12 +84,12 @@ class MessagesAPI {
               participants,
             });
             """
-        return try runJXA(script)
+        return try await runJXA(script)
     }
 
     // MARK: - Participants
 
-    func getParticipants() throws -> Any {
+    func getParticipants() async throws -> Any {
         let script = """
             const app = Application('Messages');
             const seen = new Set();
@@ -97,12 +113,12 @@ class MessagesAPI {
             }
             JSON.stringify(results);
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
     // MARK: - Send
 
-    func send(chatId: String?, participantId: String?, body: String) throws -> Any {
+    func send(chatId: String?, participantId: String?, body: String) async throws -> Any {
         guard chatId != nil || participantId != nil else {
             return ["ok": false, "error": "chatId or participantId is required"]
         }
@@ -120,7 +136,7 @@ class MessagesAPI {
             app.send(\(escapeJSString(body)), {to: target});
             JSON.stringify({sent: true});
             """
-        return try runJXA(script) ?? ["sent": true]
+        return try await runJXA(script) ?? ["sent": true]
     }
 
     // MARK: - Helpers

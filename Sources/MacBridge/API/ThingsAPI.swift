@@ -7,42 +7,42 @@ class ThingsAPI {
 
     // MARK: - JXA / AppleScript execution
 
-    private func runJXA(_ script: String) throws -> Any? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-l", "JavaScript", "-e", script]
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        proc.standardOutput = stdout
-        proc.standardError = stderr
-
-        try proc.run()
-        proc.waitUntilExit()
-
-        guard proc.terminationStatus == 0 else {
-            let errStr = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw BridgeError.scriptFailed(errStr)
-        }
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !output.isEmpty else { return nil }
-        return try JSONSerialization.jsonObject(with: Data(output.utf8))
+    private func runJXA(_ script: String, timeout: TimeInterval = 30) async throws -> Any? {
+        try await runOsascript(["-l", "JavaScript", "-e", script], timeout: timeout)
     }
 
-    private func runAppleScript(_ script: String) throws -> Any? {
+    private func runAppleScript(_ script: String, timeout: TimeInterval = 30) async throws -> Any? {
+        try await runOsascript(["-e", script], timeout: timeout)
+    }
+
+    private func runOsascript(_ arguments: [String], timeout: TimeInterval) async throws -> Any? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-e", script]
+        proc.arguments = arguments
 
         let stdout = Pipe()
         let stderr = Pipe()
         proc.standardOutput = stdout
         proc.standardError = stderr
 
+        let exited = AsyncStream<Void> { cont in
+            proc.terminationHandler = { _ in
+                cont.yield()
+                cont.finish()
+            }
+        }
         try proc.run()
-        proc.waitUntilExit()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { for await _ in exited { break } }
+            group.addTask {
+                do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
+                proc.terminate()
+                throw BridgeError.scriptFailed("Script timed out after \(Int(timeout))s")
+            }
+            try await group.next()
+            group.cancelAll()
+        }
 
         guard proc.terminationStatus == 0 else {
             let errStr = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -57,25 +57,25 @@ class ThingsAPI {
 
     // MARK: - Lists & Areas
 
-    func getLists() throws -> Any {
+    func getLists() async throws -> Any {
         let script = """
             const app = Application('Things3');
             JSON.stringify(app.lists().map(l => ({ id: l.id(), name: l.name() })));
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
-    func getAreas() throws -> Any {
+    func getAreas() async throws -> Any {
         let script = """
             const app = Application('Things3');
             JSON.stringify(app.areas().map(a => ({ id: a.id(), name: a.name() })));
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
     // MARK: - Projects
 
-    func getProjects(areaId: String?) throws -> Any {
+    func getProjects(areaId: String?) async throws -> Any {
         let areaFilter = areaId.map { "JSON.parse(\(escapeJSString($0)))" } ?? "null"
         let script = """
             const app = Application('Things3');
@@ -92,12 +92,12 @@ class ThingsAPI {
               area: (() => { try { const a = pr.area(); return a ? { id: a.id(), name: a.name() } : null; } catch { return null; } })(),
             })));
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
     // MARK: - Todos
 
-    func getTodos(listId: String?, areaId: String?, projectId: String?, status: String, limit: Int) throws -> Any {
+    func getTodos(listId: String?, areaId: String?, projectId: String?, status: String, limit: Int) async throws -> Any {
         let todoSource: String
         if let listId {
             todoSource = "todos = app.lists.byId(\(escapeJSString(listId))).toDos();"
@@ -138,10 +138,10 @@ class ThingsAPI {
             }
             JSON.stringify(results);
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
-    func getTodo(id: String) throws -> Any? {
+    func getTodo(id: String) async throws -> Any? {
         let script = """
             const app = Application('Things3');
             function safeDate(fn) {
@@ -166,12 +166,12 @@ class ThingsAPI {
               });
             }
             """
-        return try runJXA(script)
+        return try await runJXA(script)
     }
 
     // MARK: - Create (AppleScript — JXA `make` fails with -2710)
 
-    func createTodo(name: String, notes: String?, dueDate: String?, listId: String?, projectId: String?) throws -> Any {
+    func createTodo(name: String, notes: String?, dueDate: String?, listId: String?, projectId: String?) async throws -> Any {
         var props = ["name: \(escapeASString(name))"]
         if let notes {
             props.append("notes: \(escapeASString(notes))")
@@ -196,12 +196,12 @@ class ThingsAPI {
               return "{" & quote & "id" & quote & ":" & quote & theId & quote & "}"
             end tell
             """
-        return try runAppleScript(script) ?? ["id": NSNull()]
+        return try await runAppleScript(script) ?? ["id": NSNull()]
     }
 
     // MARK: - Status
 
-    func setStatus(ids: [String], status: String) throws -> Any {
+    func setStatus(ids: [String], status: String) async throws -> Any {
         let idsJS = try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
             const app = Application('Things3');
@@ -243,12 +243,12 @@ class ThingsAPI {
             }
             JSON.stringify({ updated, newRecurringInstances });
             """
-        return try runJXA(script) ?? ["updated": 0]
+        return try await runJXA(script) ?? ["updated": 0]
     }
 
     // MARK: - Delete
 
-    func deleteTodos(ids: [String]) throws -> Any {
+    func deleteTodos(ids: [String]) async throws -> Any {
         let idsJS = try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
             const app = Application('Things3');
@@ -262,7 +262,7 @@ class ThingsAPI {
             }
             JSON.stringify({ deleted });
             """
-        return try runJXA(script) ?? ["deleted": 0]
+        return try await runJXA(script) ?? ["deleted": 0]
     }
 
     // MARK: - Helpers

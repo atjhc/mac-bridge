@@ -101,25 +101,25 @@ func registerShortcutsRoutes(on routes: RoutesBuilder, api: ShortcutsAPI) {
         return try responseJSON(schema)
     }
 
-    routes.get("shortcuts") { req throws -> Response in
-        let shortcuts = try api.getShortcuts()
+    routes.get("shortcuts") { req async throws -> Response in
+        let shortcuts = try await api.getShortcuts()
         return try responseJSON(["ok": true, "result": shortcuts])
     }
 
-    routes.get("shortcut") { req throws -> Response in
+    routes.get("shortcut") { req async throws -> Response in
         guard let id = req.query[String.self, at: "id"] else {
             throw Abort(.badRequest, reason: "'id' parameter is required")
         }
-        let shortcut = try api.getShortcut(id: id)
+        let shortcut = try await api.getShortcut(id: id)
         return try responseJSON(["ok": true, "result": shortcut as Any])
     }
 
-    routes.get("folders") { req throws -> Response in
-        let folders = try api.getFolders()
+    routes.get("folders") { req async throws -> Response in
+        let folders = try await api.getFolders()
         return try responseJSON(["ok": true, "result": folders])
     }
 
-    routes.post("run") { req throws -> Response in
+    routes.post("run") { req async throws -> Response in
         struct RunRequest: Content {
             let name: String?
             let id: String?
@@ -130,7 +130,7 @@ func registerShortcutsRoutes(on routes: RoutesBuilder, api: ShortcutsAPI) {
         guard body.name != nil || body.id != nil else {
             throw Abort(.badRequest, reason: "'name' or 'id' is required")
         }
-        let result = try api.runShortcut(name: body.name, id: body.id, input: body.input)
+        let result = try await api.runShortcut(name: body.name, id: body.id, input: body.input)
         return try responseJSON(["ok": true, "result": result])
     }
 }

@@ -178,44 +178,44 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI) {
         return try responseJSON(schema)
     }
 
-    routes.get("lists") { req throws -> Response in
-        let lists = try api.getLists()
+    routes.get("lists") { req async throws -> Response in
+        let lists = try await api.getLists()
         return try responseJSON(["ok": true, "result": lists])
     }
 
-    routes.get("areas") { req throws -> Response in
-        let areas = try api.getAreas()
+    routes.get("areas") { req async throws -> Response in
+        let areas = try await api.getAreas()
         return try responseJSON(["ok": true, "result": areas])
     }
 
-    routes.get("projects") { req throws -> Response in
+    routes.get("projects") { req async throws -> Response in
         let areaId = req.query[String.self, at: "areaId"]
-        let projects = try api.getProjects(areaId: areaId)
+        let projects = try await api.getProjects(areaId: areaId)
         return try responseJSON(["ok": true, "result": projects])
     }
 
-    routes.get("todos") { req throws -> Response in
+    routes.get("todos") { req async throws -> Response in
         let listId = req.query[String.self, at: "listId"]
         let areaId = req.query[String.self, at: "areaId"]
         let projectId = req.query[String.self, at: "projectId"]
         let status = req.query[String.self, at: "status"] ?? "open"
         let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
 
-        let todos = try api.getTodos(
+        let todos = try await api.getTodos(
             listId: listId, areaId: areaId, projectId: projectId,
             status: status, limit: limit)
         return try responseJSON(["ok": true, "result": todos])
     }
 
-    routes.get("todo") { req throws -> Response in
+    routes.get("todo") { req async throws -> Response in
         guard let id = req.query[String.self, at: "id"] else {
             throw Abort(.badRequest, reason: "'id' parameter is required")
         }
-        let todo = try api.getTodo(id: id)
+        let todo = try await api.getTodo(id: id)
         return try responseJSON(["ok": true, "result": todo as Any])
     }
 
-    routes.post("todos") { req throws -> Response in
+    routes.post("todos") { req async throws -> Response in
         struct CreateTodoRequest: Content {
             let name: String
             let notes: String?
@@ -225,30 +225,30 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI) {
         }
 
         let body = try req.content.decode(CreateTodoRequest.self)
-        let result = try api.createTodo(
+        let result = try await api.createTodo(
             name: body.name, notes: body.notes, dueDate: body.dueDate,
             listId: body.listId, projectId: body.projectId)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("todos", "status") { req throws -> Response in
+    routes.post("todos", "status") { req async throws -> Response in
         struct SetStatusRequest: Content {
             let ids: [String]
             let status: String
         }
 
         let body = try req.content.decode(SetStatusRequest.self)
-        let result = try api.setStatus(ids: body.ids, status: body.status)
+        let result = try await api.setStatus(ids: body.ids, status: body.status)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("todos", "delete") { req throws -> Response in
+    routes.post("todos", "delete") { req async throws -> Response in
         struct DeleteTodosRequest: Content {
             let ids: [String]
         }
 
         let body = try req.content.decode(DeleteTodosRequest.self)
-        let result = try api.deleteTodos(ids: body.ids)
+        let result = try await api.deleteTodos(ids: body.ids)
         return try responseJSON(["ok": true, "result": result])
     }
 }

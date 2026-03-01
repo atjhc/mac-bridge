@@ -7,7 +7,7 @@ class NotesAPI {
 
     // MARK: - JXA execution
 
-    private func runJXA(_ script: String) throws -> Any? {
+    private func runJXA(_ script: String, timeout: TimeInterval = 30) async throws -> Any? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         proc.arguments = ["-l", "JavaScript", "-e", script]
@@ -17,8 +17,24 @@ class NotesAPI {
         proc.standardOutput = stdout
         proc.standardError = stderr
 
+        let exited = AsyncStream<Void> { cont in
+            proc.terminationHandler = { _ in
+                cont.yield()
+                cont.finish()
+            }
+        }
         try proc.run()
-        proc.waitUntilExit()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { for await _ in exited { break } }
+            group.addTask {
+                do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
+                proc.terminate()
+                throw BridgeError.scriptFailed("Script timed out after \(Int(timeout))s")
+            }
+            try await group.next()
+            group.cancelAll()
+        }
 
         guard proc.terminationStatus == 0 else {
             let errStr =
@@ -47,7 +63,7 @@ class NotesAPI {
 
     // MARK: - Accounts & Folders
 
-    func getAccounts() throws -> Any {
+    func getAccounts() async throws -> Any {
         let script = """
             const app = Application('Notes');
             JSON.stringify(app.accounts().map(acct => ({
@@ -55,10 +71,10 @@ class NotesAPI {
               name: acct.name(),
             })));
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
-    func getFolders(account: String?) throws -> Any {
+    func getFolders(account: String?) async throws -> Any {
         let accountFilter = account.map { escapeJSString($0) } ?? "null"
         let script = """
             const app = Application('Notes');
@@ -76,12 +92,12 @@ class NotesAPI {
               shared: (() => { try { return f.shared(); } catch { return false; } })(),
             })));
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
     // MARK: - Notes
 
-    func getNotes(folder: String?, account: String?, search: String?, limit: Int) throws -> Any {
+    func getNotes(folder: String?, account: String?, search: String?, limit: Int) async throws -> Any {
         let folderFilter = folder.map { escapeJSString($0) } ?? "null"
         let accountFilter = account.map { escapeJSString($0) } ?? "null"
         let searchFilter = search.map { escapeJSString($0.lowercased()) } ?? "null"
@@ -124,10 +140,10 @@ class NotesAPI {
             }
             JSON.stringify(results);
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
-    func getNote(id: String) throws -> Any? {
+    func getNote(id: String) async throws -> Any? {
         let script = """
             const app = Application('Notes');
             function safeDate(fn) {
@@ -153,12 +169,12 @@ class NotesAPI {
             } catch {}
             JSON.stringify(found);
             """
-        return try runJXA(script)
+        return try await runJXA(script)
     }
 
     // MARK: - Create
 
-    func createNote(name: String, body: String, folder: String?, account: String?) throws -> Any {
+    func createNote(name: String, body: String, folder: String?, account: String?) async throws -> Any {
         let folderFilter = folder.map { escapeJSString($0) } ?? "null"
         let accountFilter = account.map { escapeJSString($0) } ?? "null"
         let script = """
@@ -189,12 +205,12 @@ class NotesAPI {
               JSON.stringify({ id: null });
             }
             """
-        return try runJXA(script) ?? ["id": NSNull()]
+        return try await runJXA(script) ?? ["id": NSNull()]
     }
 
     // MARK: - Update
 
-    func updateNote(id: String, name: String?, body: String?) throws -> Any {
+    func updateNote(id: String, name: String?, body: String?) async throws -> Any {
         let nameVal = name.map { escapeJSString($0) } ?? "null"
         let bodyVal = body.map { escapeJSString($0) } ?? "null"
         let script = """
@@ -215,12 +231,12 @@ class NotesAPI {
               JSON.stringify({ updated: false, error: String(e) });
             }
             """
-        return try runJXA(script) ?? ["updated": false]
+        return try await runJXA(script) ?? ["updated": false]
     }
 
     // MARK: - Delete
 
-    func deleteNotes(ids: [String]) throws -> Any {
+    func deleteNotes(ids: [String]) async throws -> Any {
         let idsJS =
             try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
@@ -235,12 +251,12 @@ class NotesAPI {
             }
             JSON.stringify({ deleted });
             """
-        return try runJXA(script) ?? ["deleted": 0]
+        return try await runJXA(script) ?? ["deleted": 0]
     }
 
     // MARK: - Show
 
-    func showNote(id: String) throws -> Any {
+    func showNote(id: String) async throws -> Any {
         let script = """
             const app = Application('Notes');
             const targetId = \(escapeJSString(id));
@@ -256,12 +272,12 @@ class NotesAPI {
               JSON.stringify({ shown: false, error: String(e) });
             }
             """
-        return try runJXA(script) ?? ["shown": false]
+        return try await runJXA(script) ?? ["shown": false]
     }
 
     // MARK: - Search
 
-    func searchNotes(query: String, limit: Int) throws -> Any {
+    func searchNotes(query: String, limit: Int) async throws -> Any {
         let script = """
             const app = Application('Notes');
             function safeDate(fn) {
@@ -290,7 +306,7 @@ class NotesAPI {
             }
             JSON.stringify(results);
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 }
 

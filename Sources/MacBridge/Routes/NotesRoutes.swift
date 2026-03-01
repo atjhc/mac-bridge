@@ -184,37 +184,37 @@ func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI) {
         return try responseJSON(schema)
     }
 
-    routes.get("accounts") { req throws -> Response in
-        let accounts = try api.getAccounts()
+    routes.get("accounts") { req async throws -> Response in
+        let accounts = try await api.getAccounts()
         return try responseJSON(["ok": true, "result": accounts])
     }
 
-    routes.get("folders") { req throws -> Response in
+    routes.get("folders") { req async throws -> Response in
         let account = req.query[String.self, at: "account"]
-        let folders = try api.getFolders(account: account)
+        let folders = try await api.getFolders(account: account)
         return try responseJSON(["ok": true, "result": folders])
     }
 
-    routes.get("notes") { req throws -> Response in
+    routes.get("notes") { req async throws -> Response in
         let folder = req.query[String.self, at: "folder"]
         let account = req.query[String.self, at: "account"]
         let search = req.query[String.self, at: "search"]
         let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
 
-        let notes = try api.getNotes(
+        let notes = try await api.getNotes(
             folder: folder, account: account, search: search, limit: limit)
         return try responseJSON(["ok": true, "result": notes])
     }
 
-    routes.get("note") { req throws -> Response in
+    routes.get("note") { req async throws -> Response in
         guard let id = req.query[String.self, at: "id"] else {
             throw Abort(.badRequest, reason: "'id' parameter is required")
         }
-        let note = try api.getNote(id: id)
+        let note = try await api.getNote(id: id)
         return try responseJSON(["ok": true, "result": note as Any])
     }
 
-    routes.post("notes") { req throws -> Response in
+    routes.post("notes") { req async throws -> Response in
         struct CreateNoteRequest: Content {
             let name: String
             let body: String
@@ -223,12 +223,12 @@ func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI) {
         }
 
         let body = try req.content.decode(CreateNoteRequest.self)
-        let result = try api.createNote(
+        let result = try await api.createNote(
             name: body.name, body: body.body, folder: body.folder, account: body.account)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("notes", "update") { req throws -> Response in
+    routes.post("notes", "update") { req async throws -> Response in
         struct UpdateNoteRequest: Content {
             let id: String
             let name: String?
@@ -236,36 +236,36 @@ func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI) {
         }
 
         let body = try req.content.decode(UpdateNoteRequest.self)
-        let result = try api.updateNote(id: body.id, name: body.name, body: body.body)
+        let result = try await api.updateNote(id: body.id, name: body.name, body: body.body)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("notes", "delete") { req throws -> Response in
+    routes.post("notes", "delete") { req async throws -> Response in
         struct DeleteNotesRequest: Content {
             let ids: [String]
         }
 
         let body = try req.content.decode(DeleteNotesRequest.self)
-        let result = try api.deleteNotes(ids: body.ids)
+        let result = try await api.deleteNotes(ids: body.ids)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("show") { req throws -> Response in
+    routes.post("show") { req async throws -> Response in
         struct ShowNoteRequest: Content {
             let id: String
         }
 
         let body = try req.content.decode(ShowNoteRequest.self)
-        let result = try api.showNote(id: body.id)
+        let result = try await api.showNote(id: body.id)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.get("search") { req throws -> Response in
+    routes.get("search") { req async throws -> Response in
         guard let q = req.query[String.self, at: "q"] else {
             throw Abort(.badRequest, reason: "'q' parameter is required")
         }
         let limit = min(req.query[Int.self, at: "limit"] ?? 20, 100)
-        let results = try api.searchNotes(query: q, limit: limit)
+        let results = try await api.searchNotes(query: q, limit: limit)
         return try responseJSON(["ok": true, "result": results])
     }
 }

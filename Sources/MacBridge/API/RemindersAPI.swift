@@ -7,7 +7,7 @@ class RemindersAPI {
 
     // MARK: - JXA execution
 
-    private func runJXA(_ script: String) throws -> Any? {
+    private func runJXA(_ script: String, timeout: TimeInterval = 30) async throws -> Any? {
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         proc.arguments = ["-l", "JavaScript", "-e", script]
@@ -17,8 +17,24 @@ class RemindersAPI {
         proc.standardOutput = stdout
         proc.standardError = stderr
 
+        let exited = AsyncStream<Void> { cont in
+            proc.terminationHandler = { _ in
+                cont.yield()
+                cont.finish()
+            }
+        }
         try proc.run()
-        proc.waitUntilExit()
+
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask { for await _ in exited { break } }
+            group.addTask {
+                do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
+                proc.terminate()
+                throw BridgeError.scriptFailed("Script timed out after \(Int(timeout))s")
+            }
+            try await group.next()
+            group.cancelAll()
+        }
 
         guard proc.terminationStatus == 0 else {
             let errStr = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -33,7 +49,7 @@ class RemindersAPI {
 
     // MARK: - Lists
 
-    func getLists() throws -> Any {
+    func getLists() async throws -> Any {
         let script = """
             const app = Application('Reminders');
             JSON.stringify(app.lists().map(l => ({
@@ -43,12 +59,12 @@ class RemindersAPI {
               emblem: l.emblem() || null,
             })));
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
     // MARK: - Reminders
 
-    func getReminders(listId: String?, completed: Bool?, limit: Int) throws -> Any {
+    func getReminders(listId: String?, completed: Bool?, limit: Int) async throws -> Any {
         let listFilter: String
         if let listId {
             listFilter = "const lists = [app.lists.byId(\(escapeJSString(listId)))];"
@@ -92,10 +108,10 @@ class RemindersAPI {
             }
             JSON.stringify(results);
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
-    func getReminder(id: String) throws -> Any? {
+    func getReminder(id: String) async throws -> Any? {
         let script = """
             const app = Application('Reminders');
             function safeDate(fn) {
@@ -128,13 +144,13 @@ class RemindersAPI {
             }
             JSON.stringify(found);
             """
-        return try runJXA(script)
+        return try await runJXA(script)
     }
 
     // MARK: - Create
 
     func createReminder(name: String, notes: String?, listId: String?, dueDate: String?,
-                        remindMeDate: String?, priority: Int?, flagged: Bool?) throws -> Any {
+                        remindMeDate: String?, priority: Int?, flagged: Bool?) async throws -> Any {
         var props = ["name: \(escapeJSString(name))"]
         if let notes { props.append("body: \(escapeJSString(notes))") }
         if let priority { props.append("priority: \(priority)") }
@@ -170,12 +186,12 @@ class RemindersAPI {
             \(remindMeDateLine)
             JSON.stringify({id: r.id(), name: r.name()});
             """
-        return try runJXA(script) ?? ["id": NSNull()]
+        return try await runJXA(script) ?? ["id": NSNull()]
     }
 
     // MARK: - Complete
 
-    func completeReminders(ids: [String], completed: Bool) throws -> Any {
+    func completeReminders(ids: [String], completed: Bool) async throws -> Any {
         let idsJS = try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
             const app = Application('Reminders');
@@ -195,12 +211,12 @@ class RemindersAPI {
             }
             JSON.stringify({updated});
             """
-        return try runJXA(script) ?? ["updated": 0]
+        return try await runJXA(script) ?? ["updated": 0]
     }
 
     // MARK: - Delete
 
-    func deleteReminders(ids: [String]) throws -> Any {
+    func deleteReminders(ids: [String]) async throws -> Any {
         let idsJS = try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
             const app = Application('Reminders');
@@ -219,7 +235,7 @@ class RemindersAPI {
             }
             JSON.stringify({deleted});
             """
-        return try runJXA(script) ?? ["deleted": 0]
+        return try await runJXA(script) ?? ["deleted": 0]
     }
 
     // MARK: - Helpers

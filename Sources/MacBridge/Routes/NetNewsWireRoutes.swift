@@ -178,73 +178,73 @@ func registerNetNewsWireRoutes(on routes: RoutesBuilder, api: NetNewsWireAPI) {
         return try responseJSON(schema)
     }
 
-    routes.get("feeds") { req throws -> Response in
-        let feeds = try api.getFeeds()
+    routes.get("feeds") { req async throws -> Response in
+        let feeds = try await api.getFeeds()
         return try responseJSON(["ok": true, "result": feeds])
     }
 
-    routes.get("articles") { req throws -> Response in
+    routes.get("articles") { req async throws -> Response in
         let unread = req.query[Bool.self, at: "unread"] ?? false
         let starred = req.query[Bool.self, at: "starred"] ?? false
         let feedId = req.query[String.self, at: "feedId"]
         let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
         let content = req.query[Bool.self, at: "content"] ?? false
 
-        let articles = try api.getArticles(
+        let articles = try await api.getArticles(
             unread: unread, starred: starred, feedId: feedId, limit: limit, includeContent: content)
         return try responseJSON(["ok": true, "result": articles])
     }
 
-    routes.get("article") { req throws -> Response in
+    routes.get("article") { req async throws -> Response in
         guard let id = req.query[String.self, at: "id"] else {
             throw Abort(.badRequest, reason: "'id' parameter is required")
         }
-        let article = try api.getArticle(id: id)
+        let article = try await api.getArticle(id: id)
         return try responseJSON(["ok": true, "result": article as Any])
     }
 
-    routes.get("current") { req throws -> Response in
-        let article = try api.getCurrentArticle()
+    routes.get("current") { req async throws -> Response in
+        let article = try await api.getCurrentArticle()
         return try responseJSON(["ok": true, "result": article as Any])
     }
 
-    routes.post("articles", "read") { req throws -> Response in
+    routes.post("articles", "read") { req async throws -> Response in
         struct SetReadRequest: Content {
             let ids: [String]
             let read: Bool?
         }
 
         let body = try req.content.decode(SetReadRequest.self)
-        let result = try api.setReadStatus(ids: body.ids, read: body.read ?? true)
+        let result = try await api.setReadStatus(ids: body.ids, read: body.read ?? true)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("articles", "starred") { req throws -> Response in
+    routes.post("articles", "starred") { req async throws -> Response in
         struct SetStarredRequest: Content {
             let ids: [String]
             let starred: Bool?
         }
 
         let body = try req.content.decode(SetStarredRequest.self)
-        let result = try api.setStarredStatus(ids: body.ids, starred: body.starred ?? true)
+        let result = try await api.setStarredStatus(ids: body.ids, starred: body.starred ?? true)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.post("open") { req throws -> Response in
+    routes.post("open") { req async throws -> Response in
         struct OpenRequest: Content {
             let url: String?
             let id: String?
         }
 
         let body = try req.content.decode(OpenRequest.self)
-        let result = try api.openArticle(url: body.url, id: body.id)
+        let result = try await api.openArticle(url: body.url, id: body.id)
         return try responseJSON(["ok": true, "result": result])
     }
 
-    routes.get("deeplink") { req throws -> Response in
+    routes.get("deeplink") { req async throws -> Response in
         let url = req.query[String.self, at: "url"]
         let id = req.query[String.self, at: "id"]
-        let result = try api.getDeeplink(url: url, id: id)
+        let result = try await api.getDeeplink(url: url, id: id)
         return try responseJSON(["ok": true, "result": result])
     }
 }

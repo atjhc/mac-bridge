@@ -100,25 +100,25 @@ func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI) {
         return try responseJSON(schema)
     }
 
-    routes.get("chats") { req throws -> Response in
-        let chats = try api.getChats()
+    routes.get("chats") { req async throws -> Response in
+        let chats = try await api.getChats()
         return try responseJSON(["ok": true, "result": chats])
     }
 
-    routes.get("chat") { req throws -> Response in
+    routes.get("chat") { req async throws -> Response in
         guard let id = req.query[String.self, at: "id"] else {
             throw Abort(.badRequest, reason: "'id' parameter is required")
         }
-        let chat = try api.getChat(id: id)
+        let chat = try await api.getChat(id: id)
         return try responseJSON(["ok": true, "result": chat as Any])
     }
 
-    routes.get("participants") { req throws -> Response in
-        let participants = try api.getParticipants()
+    routes.get("participants") { req async throws -> Response in
+        let participants = try await api.getParticipants()
         return try responseJSON(["ok": true, "result": participants])
     }
 
-    routes.post("send") { req throws -> Response in
+    routes.post("send") { req async throws -> Response in
         struct SendRequest: Content {
             let chatId: String?
             let participantId: String?
@@ -129,7 +129,7 @@ func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI) {
         guard body.chatId != nil || body.participantId != nil else {
             throw Abort(.badRequest, reason: "'chatId' or 'participantId' is required")
         }
-        let result = try api.send(
+        let result = try await api.send(
             chatId: body.chatId, participantId: body.participantId, body: body.body)
         return try responseJSON(["ok": true, "result": result])
     }

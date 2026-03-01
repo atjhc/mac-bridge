@@ -14,8 +14,6 @@
   <dict>
     <key>DEBUG</key>
     <string>1</string>
-    <key>MACBRIDGE_RATE_LIMIT</key>
-    <string>10</string>
   </dict>
 
   <key>RunAtLoad</key>
