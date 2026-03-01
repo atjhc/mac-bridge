@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.user.shortcuts-bridge-swift</string>
+  <string>com.user.macbridge</string>
 
   <key>ProgramArguments</key>
   <array>
-    <string>__PROJECT_DIR__/.build/release/ShortcutsBridge</string>
+    <string>__PROJECT_DIR__/.build/release/MacBridge</string>
   </array>
 
   <key>EnvironmentVariables</key>
@@ -25,9 +25,9 @@
   <true/>
 
   <key>StandardOutPath</key>
-  <string>__HOME__/Library/Logs/shortcuts-bridge.log</string>
+  <string>__HOME__/Library/Logs/macbridge.log</string>
 
   <key>StandardErrorPath</key>
-  <string>__HOME__/Library/Logs/shortcuts-bridge.log</string>
+  <string>__HOME__/Library/Logs/macbridge.log</string>
 </dict>
 </plist>

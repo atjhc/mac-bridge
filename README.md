@@ -1,21 +1,30 @@
 # Mac Bridge
 
-Native Swift HTTP bridges for macOS applications. Each bridge exposes a local REST API backed by native frameworks (EventKit, Contacts) or ScriptingBridge, giving 10-100x performance over AppleScript/JXA with better reliability.
+Unified Swift HTTP bridge for macOS applications. A single server on port 7330 exposes REST APIs for 9 native apps via namespaced route prefixes.
 
 Built on [Vapor](https://vapor.codes). Requires macOS 14+.
 
 ## Bridges
 
-| Bridge | Port | Framework | App |
-| --- | --- | --- | --- |
-| CalendarBridge | 7334 | EventKit | Calendar |
-| ContactsBridge | 7335 | Contacts | Contacts |
-| MailBridge | 7333 | ScriptingBridge | Mail |
-| ThingsBridge | 7332 | ScriptingBridge | Things 3 |
-| NotesBridge | 7336 | ScriptingBridge | Notes |
-| NetNewsWireBridge | 7331 | ScriptingBridge | NetNewsWire |
+| Prefix | Framework | App |
+| --- | --- | --- |
+| `/calendar` | EventKit | Calendar |
+| `/contacts` | Contacts | Contacts |
+| `/mail` | ScriptingBridge | Mail |
+| `/things` | JXA | Things 3 |
+| `/notes` | JXA | Notes |
+| `/nnw` | JXA | NetNewsWire |
+| `/reminders` | JXA | Reminders |
+| `/messages` | JXA | Messages |
+| `/shortcuts` | JXA | Shortcuts |
 
-Every bridge provides `/help` (markdown API docs), `/health`, and `/schema` (machine-readable endpoint definitions).
+Every bridge provides `help`, `health`, and `schema` endpoints under its prefix (e.g. `/mail/help`, `/things/health`).
+
+### Global endpoints
+
+- `GET /` — list all bridges with current health status
+- `GET /health` — aggregate health (`ok` or `degraded`)
+- `GET /help` — overview of all bridges and prefixes
 
 ### Response format
 
@@ -27,7 +36,7 @@ All endpoints return **markdown** by default (tables for lists, key-value pairs 
 swift build -c release
 ```
 
-Binaries are output to `.build/release/`.
+Binary is output to `.build/release/MacBridge`.
 
 ## Testing
 
@@ -42,27 +51,24 @@ The `BridgeCore` library has unit tests covering markdown conversion, cell forma
 ### Development
 
 ```bash
-# Run any bridge directly
-.build/release/CalendarBridge
+# Run directly
+.build/release/MacBridge
 
 # Override port via environment
-MAIL_BRIDGE_PORT=7333 .build/release/MailBridge
+MACBRIDGE_PORT=8080 .build/release/MacBridge
 ```
 
-### Production (LaunchAgents)
-
-All scripts accept optional bridge names (`calendar`, `contacts`, `mail`, `things`, `notes`, `nnw`). No arguments means all bridges.
+### Production (LaunchAgent)
 
 ```bash
-# Install and start services
-./scripts/install.sh                # all bridges
-./scripts/install.sh calendar mail  # specific bridges
+# Install and start service
+./scripts/install.sh
 
 # Start / stop without reinstalling
 ./scripts/start.sh
-./scripts/stop.sh contacts
+./scripts/stop.sh
 
-# Uninstall services
+# Uninstall service
 ./scripts/uninstall.sh
 ```
 
@@ -70,7 +76,7 @@ All scripts accept optional bridge names (`calendar`, `contacts`, `mail`, `thing
 
 Startup logs (stdout/stderr from launchd):
 ```bash
-tail -f ~/Library/Logs/calendar-bridge.log
+tail -f ~/Library/Logs/macbridge.log
 ```
 
 Request logs (via OSLog):
@@ -87,45 +93,32 @@ Sources/
     Middleware.swift       # FormatMiddleware, LoggingMiddleware, RateLimitMiddleware
     RateLimiter.swift     # Per-IP rate limiting actor
     Response.swift        # responseJSON() helper
-  CalendarBridge/         # EventKit bridge (port 7334)
-    CalendarAPI.swift
-    main.swift
-  ContactsBridge/         # Contacts bridge (port 7335)
-    ContactsAPI.swift
-    main.swift
-  MailBridge/             # ScriptingBridge bridge (port 7333)
-    Mail.h
-    MailBridgeAPI.swift
-    main.swift
-  ThingsBridge/           # ScriptingBridge bridge (port 7332)
-    ThingsAPI.swift
-    main.swift
-  NotesBridge/            # ScriptingBridge bridge (port 7336)
-    NotesAPI.swift
-    main.swift
-  NetNewsWireBridge/      # ScriptingBridge bridge (port 7331)
-    NetNewsWireAPI.swift
-    main.swift
+    HealthCheck.swift     # App health check (installed/running)
+  MacBridge/
+    main.swift            # Entry point, global middleware, root endpoints
+    BridgeError.swift     # Shared error type for JXA bridges
+    API/                  # Framework integration and business logic (one per bridge)
+    Routes/               # Route registration functions (one per bridge)
 Tests/
   BridgeCoreTests/        # Unit tests for shared library
-launchd/                  # LaunchAgent plist templates
+launchd/                  # LaunchAgent plist template
 scripts/
-  install.sh              # Install and load LaunchAgents
-  uninstall.sh            # Stop and remove LaunchAgents
-  start.sh                # Start (or restart) services
-  stop.sh                 # Stop services
+  install.sh              # Install and load LaunchAgent
+  uninstall.sh            # Stop and remove LaunchAgent
+  start.sh                # Start (or restart) service
+  stop.sh                 # Stop service
   format.sh               # Run swift-format
 ```
 
 ## Environment variables
 
-- `{BRIDGE_NAME}_PORT` - Port number (e.g. `CALENDAR_BRIDGE_PORT=7334`)
-- `RATE_LIMIT_PER_SECOND` - Max requests per IP per second (default: 10)
-- `ARCHIVE_MAILBOXES` - Mail bridge archive mailbox config (format: `Account1=Mailbox,Account2=Mailbox`)
+- `MACBRIDGE_PORT` — Port number (default: 7330)
+- `MACBRIDGE_DISABLED` — Comma-separated list of bridge prefixes to disable (e.g. `nnw,things`)
+- `RATE_LIMIT_PER_SECOND` — Max requests per IP per second (default: 10)
+- `ARCHIVE_MAILBOXES` — Mail bridge archive mailbox config (format: `Account1=Mailbox,Account2=Mailbox`)
 
 ## Adding a new bridge
 
-1. Create `Sources/NewBridge/NewBridgeAPI.swift` with framework logic
-2. Create `Sources/NewBridge/main.swift` with Vapor routes (import BridgeCore for shared middleware/helpers)
-3. Add executable target to `Package.swift` with `BridgeCore` dependency
-4. Create LaunchAgent plist in `launchd/`
+1. Create `Sources/MacBridge/API/NewAppAPI.swift` with framework logic
+2. Create `Sources/MacBridge/Routes/NewAppRoutes.swift` with a `registerNewAppRoutes(on:api:)` function
+3. Register in `main.swift`: instantiate API, call `registerNewAppRoutes(on: app.grouped("newapp"), api: ...)`, add to the `bridges` array

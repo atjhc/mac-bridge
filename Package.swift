@@ -17,63 +17,7 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "CalendarBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
-        ),
-        .executableTarget(
-            name: "ContactsBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
-        ),
-        .executableTarget(
-            name: "MailBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
-        ),
-        .executableTarget(
-            name: "ThingsBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
-        ),
-        .executableTarget(
-            name: "NotesBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
-        ),
-        .executableTarget(
-            name: "NetNewsWireBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
-        ),
-        .executableTarget(
-            name: "RemindersBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
-        ),
-        .executableTarget(
-            name: "MessagesBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
-        ),
-        .executableTarget(
-            name: "ShortcutsBridge",
+            name: "MacBridge",
             dependencies: [
                 .product(name: "Vapor", package: "vapor"),
                 "BridgeCore",

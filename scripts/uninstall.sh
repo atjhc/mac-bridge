@@ -1,82 +1,41 @@
 #!/bin/bash
 set -e
 
-# Swift Bridge LaunchAgent Uninstallation Script
-# Usage: ./scripts/uninstall.sh [bridge...]
-# Examples:
-#   ./scripts/uninstall.sh                # uninstall all
-#   ./scripts/uninstall.sh calendar       # uninstall one
-#   ./scripts/uninstall.sh mail contacts  # uninstall specific ones
+# MacBridge LaunchAgent Uninstallation Script
+# Usage: ./scripts/uninstall.sh
 
 TARGET_DIR="$HOME/Library/LaunchAgents"
+LABEL="com.user.macbridge"
 
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-RED='\033[0;31m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-# Map short names to launchd labels
-resolve_label() {
-    case "$1" in
-        calendar) echo "com.user.calendar-bridge-swift" ;;
-        contacts) echo "com.user.contacts-bridge-swift" ;;
-        mail)     echo "com.user.mail-bridge-swift" ;;
-        things)   echo "com.user.things-bridge-swift" ;;
-        notes)    echo "com.user.notes-bridge-swift" ;;
-        nnw)       echo "com.user.nnw-bridge-swift" ;;
-        reminders) echo "com.user.reminders-bridge-swift" ;;
-        messages)  echo "com.user.messages-bridge-swift" ;;
-        shortcuts) echo "com.user.shortcuts-bridge-swift" ;;
-        *) echo -e "${RED}Unknown bridge: $1${RESET}" >&2; return 1 ;;
-    esac
-}
-
-if [ $# -gt 0 ]; then
-    labels=()
-    for name in "$@"; do
-        labels+=("$(resolve_label "$name")") || exit 1
-    done
-else
-    labels=(
-        "com.user.calendar-bridge-swift"
-        "com.user.contacts-bridge-swift"
-        "com.user.mail-bridge-swift"
-        "com.user.things-bridge-swift"
-        "com.user.notes-bridge-swift"
-        "com.user.nnw-bridge-swift"
-        "com.user.reminders-bridge-swift"
-        "com.user.messages-bridge-swift"
-        "com.user.shortcuts-bridge-swift"
-    )
-fi
-
-echo -e "${BOLD}Swift Bridge LaunchAgent Uninstaller${RESET}"
-echo "====================================="
+echo -e "${BOLD}MacBridge LaunchAgent Uninstaller${RESET}"
+echo "=================================="
 echo
 
-for label in "${labels[@]}"; do
-    plist="$TARGET_DIR/$label.plist"
+PLIST="$TARGET_DIR/$LABEL.plist"
 
-    if [ -f "$plist" ]; then
-        echo "Removing $label..."
+if [ -f "$PLIST" ]; then
+    echo "Removing $LABEL..."
 
-        echo "  Stopping service..."
-        launchctl stop "$label" 2>/dev/null || true
+    echo "  Stopping service..."
+    launchctl stop "$LABEL" 2>/dev/null || true
 
-        echo "  Unloading service..."
-        launchctl unload "$plist" 2>/dev/null || true
+    echo "  Unloading service..."
+    launchctl unload "$PLIST" 2>/dev/null || true
 
-        echo "  Removing plist..."
-        rm "$plist"
+    echo "  Removing plist..."
+    rm "$PLIST"
 
-        echo -e "  ${GREEN}$label removed${RESET}"
-        echo
-    else
-        echo -e "  ${YELLOW}$label not found (already removed?)${RESET}"
-        echo
-    fi
-done
+    echo -e "  ${GREEN}$LABEL removed${RESET}"
+    echo
+else
+    echo -e "  ${YELLOW}$LABEL not found (already removed?)${RESET}"
+    echo
+fi
 
 echo -e "${GREEN}Uninstallation complete!${RESET}"
 echo
