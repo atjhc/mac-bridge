@@ -10,6 +10,7 @@ LAUNCHD_DIR="$PROJECT_DIR/launchd"
 TARGET_DIR="$HOME/Library/LaunchAgents"
 LABEL="com.user.macbridge"
 BINARY="MacBridge"
+CERT_NAME="${CODESIGN_IDENTITY:-}"
 PORT=7330
 
 RED='\033[0;31m'
@@ -30,6 +31,21 @@ if [ ! -f "$PROJECT_DIR/.build/release/$BINARY" ]; then
     exit 1
 fi
 echo -e "${GREEN}Binary found${RESET}"
+echo
+
+# Code signing (optional) — sign if CODESIGN_IDENTITY is set
+if [ -n "$CERT_NAME" ]; then
+    if security find-identity -v -p codesigning 2>/dev/null | grep -q "\"$CERT_NAME\""; then
+        echo "Signing binary with '$CERT_NAME'..."
+        codesign --force --sign "$CERT_NAME" "$PROJECT_DIR/.build/release/$BINARY"
+        echo -e "${GREEN}Binary signed${RESET}"
+    else
+        echo -e "${RED}Signing identity '$CERT_NAME' not found in keychain${RESET}"
+        exit 1
+    fi
+else
+    echo -e "${YELLOW}Skipping code signing (set CODESIGN_IDENTITY to enable)${RESET}"
+fi
 echo
 
 # Create LaunchAgents directory if needed
@@ -81,6 +97,6 @@ fi
 echo
 echo -e "${BOLD}Logs:${RESET}"
 echo "   Startup logs: ~/Library/Logs/macbridge.log (stdout/stderr from launchd)"
-echo "   Request logs: log stream --predicate 'subsystem == \"com.user.bridge\"' --level info"
+echo "   Request logs: log stream --predicate 'subsystem == \"com.user.mac-bridge\"' --level info"
 echo
 echo -e "${GREEN}Installation complete!${RESET}"
