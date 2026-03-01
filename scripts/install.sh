@@ -28,7 +28,10 @@ resolve() {
         mail)     label="com.user.mail-bridge-swift"     binary="MailBridge"          port=7333 ;;
         things)   label="com.user.things-bridge-swift"   binary="ThingsBridge"        port=7332 ;;
         notes)    label="com.user.notes-bridge-swift"    binary="NotesBridge"         port=7336 ;;
-        nnw)      label="com.user.nnw-bridge-swift"      binary="NetNewsWireBridge"   port=7331 ;;
+        nnw)       label="com.user.nnw-bridge-swift"       binary="NetNewsWireBridge"   port=7331 ;;
+        reminders) label="com.user.reminders-bridge-swift" binary="RemindersBridge"    port=7337 ;;
+        messages)  label="com.user.messages-bridge-swift"  binary="MessagesBridge"     port=7338 ;;
+        shortcuts) label="com.user.shortcuts-bridge-swift" binary="ShortcutsBridge"    port=7339 ;;
         *) echo -e "${RED}Unknown bridge: $1${RESET}" >&2; return 1 ;;
     esac
     echo "$label $binary $port"
@@ -38,7 +41,7 @@ resolve() {
 if [ $# -gt 0 ]; then
     bridges=("$@")
 else
-    bridges=(calendar contacts mail things notes nnw)
+    bridges=(calendar contacts mail things notes nnw reminders messages shortcuts)
 fi
 
 echo -e "${BOLD}Swift Bridge LaunchAgent Installer${RESET}"

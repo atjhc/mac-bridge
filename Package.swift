@@ -58,6 +58,27 @@ let package = Package(
                 "BridgeCore",
             ]
         ),
+        .executableTarget(
+            name: "RemindersBridge",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                "BridgeCore",
+            ]
+        ),
+        .executableTarget(
+            name: "MessagesBridge",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                "BridgeCore",
+            ]
+        ),
+        .executableTarget(
+            name: "ShortcutsBridge",
+            dependencies: [
+                .product(name: "Vapor", package: "vapor"),
+                "BridgeCore",
+            ]
+        ),
         .testTarget(
             name: "BridgeCoreTests",
             dependencies: ["BridgeCore"]

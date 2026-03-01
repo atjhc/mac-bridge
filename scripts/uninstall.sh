@@ -24,7 +24,10 @@ resolve_label() {
         mail)     echo "com.user.mail-bridge-swift" ;;
         things)   echo "com.user.things-bridge-swift" ;;
         notes)    echo "com.user.notes-bridge-swift" ;;
-        nnw)      echo "com.user.nnw-bridge-swift" ;;
+        nnw)       echo "com.user.nnw-bridge-swift" ;;
+        reminders) echo "com.user.reminders-bridge-swift" ;;
+        messages)  echo "com.user.messages-bridge-swift" ;;
+        shortcuts) echo "com.user.shortcuts-bridge-swift" ;;
         *) echo -e "${RED}Unknown bridge: $1${RESET}" >&2; return 1 ;;
     esac
 }
@@ -42,6 +45,9 @@ else
         "com.user.things-bridge-swift"
         "com.user.notes-bridge-swift"
         "com.user.nnw-bridge-swift"
+        "com.user.reminders-bridge-swift"
+        "com.user.messages-bridge-swift"
+        "com.user.shortcuts-bridge-swift"
     )
 fi
 
