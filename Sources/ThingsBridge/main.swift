@@ -159,44 +159,44 @@ router.get("schema") { _, _ -> Response in
     return try bridgeResponse(schema)
 }
 
-router.get("lists") { _, _ -> Response in
-    let lists = try thingsAPI.getLists()
+router.get("lists") { _, _ async throws -> Response in
+    let lists = try await thingsAPI.getLists()
     return try bridgeResponse(["ok": true, "result": lists])
 }
 
-router.get("areas") { _, _ -> Response in
-    let areas = try thingsAPI.getAreas()
+router.get("areas") { _, _ async throws -> Response in
+    let areas = try await thingsAPI.getAreas()
     return try bridgeResponse(["ok": true, "result": areas])
 }
 
-router.get("projects") { req, _ -> Response in
+router.get("projects") { req, _ async throws -> Response in
     let areaId: String? = req.uri.queryParameters.get("areaId")
-    let projects = try thingsAPI.getProjects(areaId: areaId)
+    let projects = try await thingsAPI.getProjects(areaId: areaId)
     return try bridgeResponse(["ok": true, "result": projects])
 }
 
-router.get("todos") { req, _ -> Response in
+router.get("todos") { req, _ async throws -> Response in
     let listId: String? = req.uri.queryParameters.get("listId")
     let areaId: String? = req.uri.queryParameters.get("areaId")
     let projectId: String? = req.uri.queryParameters.get("projectId")
     let status = req.uri.queryParameters.get("status") ?? "open"
     let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 50, 200)
 
-    let todos = try thingsAPI.getTodos(
+    let todos = try await thingsAPI.getTodos(
         listId: listId, areaId: areaId, projectId: projectId,
         status: status, limit: limit)
     return try bridgeResponse(["ok": true, "result": todos])
 }
 
-router.get("todo") { req, _ -> Response in
+router.get("todo") { req, _ async throws -> Response in
     guard let id: String = req.uri.queryParameters.get("id") else {
         throw HTTPError(.badRequest, message: "'id' parameter is required")
     }
-    let todo = try thingsAPI.getTodo(id: id)
+    let todo = try await thingsAPI.getTodo(id: id)
     return try bridgeResponse(["ok": true, "result": todo as Any])
 }
 
-router.post("todos") { req, ctx -> Response in
+router.post("todos") { req, ctx async throws -> Response in
     struct CreateTodoRequest: Decodable {
         let name: String
         let notes: String?
@@ -206,30 +206,30 @@ router.post("todos") { req, ctx -> Response in
     }
 
     let body = try await req.decode(as: CreateTodoRequest.self, context: ctx)
-    let result = try thingsAPI.createTodo(
+    let result = try await thingsAPI.createTodo(
         name: body.name, notes: body.notes, dueDate: body.dueDate,
         listId: body.listId, projectId: body.projectId)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.post("todos/status") { req, ctx -> Response in
+router.post("todos/status") { req, ctx async throws -> Response in
     struct SetStatusRequest: Decodable {
         let ids: [String]
         let status: String
     }
 
     let body = try await req.decode(as: SetStatusRequest.self, context: ctx)
-    let result = try thingsAPI.setStatus(ids: body.ids, status: body.status)
+    let result = try await thingsAPI.setStatus(ids: body.ids, status: body.status)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.post("todos/delete") { req, ctx -> Response in
+router.post("todos/delete") { req, ctx async throws -> Response in
     struct DeleteTodosRequest: Decodable {
         let ids: [String]
     }
 
     let body = try await req.decode(as: DeleteTodosRequest.self, context: ctx)
-    let result = try thingsAPI.deleteTodos(ids: body.ids)
+    let result = try await thingsAPI.deleteTodos(ids: body.ids)
     return try bridgeResponse(["ok": true, "result": result])
 }
 

@@ -173,37 +173,37 @@ router.get("schema") { _, _ -> Response in
     return try bridgeResponse(schema)
 }
 
-router.get("accounts") { _, _ -> Response in
-    let accounts = try notesAPI.getAccounts()
+router.get("accounts") { _, _ async throws -> Response in
+    let accounts = try await notesAPI.getAccounts()
     return try bridgeResponse(["ok": true, "result": accounts])
 }
 
-router.get("folders") { req, _ -> Response in
+router.get("folders") { req, _ async throws -> Response in
     let account: String? = req.uri.queryParameters.get("account")
-    let folders = try notesAPI.getFolders(account: account)
+    let folders = try await notesAPI.getFolders(account: account)
     return try bridgeResponse(["ok": true, "result": folders])
 }
 
-router.get("notes") { req, _ -> Response in
+router.get("notes") { req, _ async throws -> Response in
     let folder: String? = req.uri.queryParameters.get("folder")
     let account: String? = req.uri.queryParameters.get("account")
     let search: String? = req.uri.queryParameters.get("search")
     let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 50, 200)
 
-    let notes = try notesAPI.getNotes(
+    let notes = try await notesAPI.getNotes(
         folder: folder, account: account, search: search, limit: limit)
     return try bridgeResponse(["ok": true, "result": notes])
 }
 
-router.get("note") { req, _ -> Response in
+router.get("note") { req, _ async throws -> Response in
     guard let id: String = req.uri.queryParameters.get("id") else {
         throw HTTPError(.badRequest, message: "'id' parameter is required")
     }
-    let note = try notesAPI.getNote(id: id)
+    let note = try await notesAPI.getNote(id: id)
     return try bridgeResponse(["ok": true, "result": note as Any])
 }
 
-router.post("notes") { req, ctx -> Response in
+router.post("notes") { req, ctx async throws -> Response in
     struct CreateNoteRequest: Decodable {
         let name: String
         let body: String
@@ -212,12 +212,12 @@ router.post("notes") { req, ctx -> Response in
     }
 
     let body = try await req.decode(as: CreateNoteRequest.self, context: ctx)
-    let result = try notesAPI.createNote(
+    let result = try await notesAPI.createNote(
         name: body.name, body: body.body, folder: body.folder, account: body.account)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.post("notes/update") { req, ctx -> Response in
+router.post("notes/update") { req, ctx async throws -> Response in
     struct UpdateNoteRequest: Decodable {
         let id: String
         let name: String?
@@ -225,36 +225,36 @@ router.post("notes/update") { req, ctx -> Response in
     }
 
     let body = try await req.decode(as: UpdateNoteRequest.self, context: ctx)
-    let result = try notesAPI.updateNote(id: body.id, name: body.name, body: body.body)
+    let result = try await notesAPI.updateNote(id: body.id, name: body.name, body: body.body)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.post("notes/delete") { req, ctx -> Response in
+router.post("notes/delete") { req, ctx async throws -> Response in
     struct DeleteNotesRequest: Decodable {
         let ids: [String]
     }
 
     let body = try await req.decode(as: DeleteNotesRequest.self, context: ctx)
-    let result = try notesAPI.deleteNotes(ids: body.ids)
+    let result = try await notesAPI.deleteNotes(ids: body.ids)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.post("show") { req, ctx -> Response in
+router.post("show") { req, ctx async throws -> Response in
     struct ShowNoteRequest: Decodable {
         let id: String
     }
 
     let body = try await req.decode(as: ShowNoteRequest.self, context: ctx)
-    let result = try notesAPI.showNote(id: body.id)
+    let result = try await notesAPI.showNote(id: body.id)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.get("search") { req, _ -> Response in
+router.get("search") { req, _ async throws -> Response in
     guard let q: String = req.uri.queryParameters.get("q") else {
         throw HTTPError(.badRequest, message: "'q' parameter is required")
     }
     let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 20, 100)
-    let results = try notesAPI.searchNotes(query: q, limit: limit)
+    let results = try await notesAPI.searchNotes(query: q, limit: limit)
     return try bridgeResponse(["ok": true, "result": results])
 }
 

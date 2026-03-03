@@ -23,50 +23,9 @@ class NetNewsWireAPI {
         )
     }
 
-    // MARK: - JXA execution
-
-    private func runJXA(_ script: String) throws -> Any? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-l", "JavaScript", "-e", script]
-
-        let stdout = Pipe()
-        let stderr = Pipe()
-        proc.standardOutput = stdout
-        proc.standardError = stderr
-
-        try proc.run()
-        proc.waitUntilExit()
-
-        guard proc.terminationStatus == 0 else {
-            let errStr =
-                String(
-                    data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
-                )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw BridgeError.scriptFailed(errStr)
-        }
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        let output =
-            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? ""
-        guard !output.isEmpty else { return nil }
-        return try JSONSerialization.jsonObject(with: Data(output.utf8))
-    }
-
-    private func escapeJSString(_ s: String) -> String {
-        let escaped =
-            s
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r")
-        return "\"\(escaped)\""
-    }
-
     // MARK: - Feeds
 
-    func getFeeds() throws -> Any {
+    func getFeeds() async throws -> Any {
         let script = """
             const app = Application('NetNewsWire');
             const results = [];
@@ -80,14 +39,14 @@ class NetNewsWireAPI {
             }
             JSON.stringify(results);
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
     // MARK: - Articles
 
     func getArticles(
         unread: Bool, starred: Bool, feedId: String?, limit: Int, includeContent: Bool
-    ) throws -> Any {
+    ) async throws -> Any {
         let feedFilter = feedId.map { escapeJSString($0) } ?? "null"
         let script = """
             const app = Application('NetNewsWire');
@@ -125,10 +84,10 @@ class NetNewsWireAPI {
             }
             JSON.stringify(results);
             """
-        return try runJXA(script) ?? []
+        return try await runJXA(script) ?? []
     }
 
-    func getArticle(id: String) throws -> Any? {
+    func getArticle(id: String) async throws -> Any? {
         let script = """
             const app = Application('NetNewsWire');
             const targetId = \(escapeJSString(id));
@@ -158,12 +117,12 @@ class NetNewsWireAPI {
             }
             JSON.stringify(found);
             """
-        return try runJXA(script)
+        return try await runJXA(script)
     }
 
     // MARK: - Current Article
 
-    func getCurrentArticle() throws -> Any? {
+    func getCurrentArticle() async throws -> Any? {
         let script = """
             const app = Application('NetNewsWire');
             const article = app.currentArticle();
@@ -186,12 +145,12 @@ class NetNewsWireAPI {
               });
             }
             """
-        return try runJXA(script)
+        return try await runJXA(script)
     }
 
     // MARK: - Read/Starred
 
-    func setReadStatus(ids: [String], read: Bool) throws -> Any {
+    func setReadStatus(ids: [String], read: Bool) async throws -> Any {
         let idsJS =
             try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
@@ -209,10 +168,10 @@ class NetNewsWireAPI {
             }
             JSON.stringify({ updated });
             """
-        return try runJXA(script) ?? ["updated": 0]
+        return try await runJXA(script) ?? ["updated": 0]
     }
 
-    func setStarredStatus(ids: [String], starred: Bool) throws -> Any {
+    func setStarredStatus(ids: [String], starred: Bool) async throws -> Any {
         let idsJS =
             try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
@@ -230,12 +189,12 @@ class NetNewsWireAPI {
             }
             JSON.stringify({ updated });
             """
-        return try runJXA(script) ?? ["updated": 0]
+        return try await runJXA(script) ?? ["updated": 0]
     }
 
     // MARK: - Open & Deeplink
 
-    func openArticle(url: String?, id: String?) throws -> Any {
+    func openArticle(url: String?, id: String?) async throws -> Any {
         let urlVal = url.map { escapeJSString($0) } ?? "null"
         let idVal = id.map { escapeJSString($0) } ?? "null"
         let script = """
@@ -259,10 +218,10 @@ class NetNewsWireAPI {
               JSON.stringify({ ok: true, url: targetUrl });
             }
             """
-        return try runJXA(script) ?? ["ok": false, "error": "Script returned no output"]
+        return try await runJXA(script) ?? ["ok": false, "error": "Script returned no output"]
     }
 
-    func getDeeplink(url: String?, id: String?) throws -> Any {
+    func getDeeplink(url: String?, id: String?) async throws -> Any {
         let urlVal = url.map { escapeJSString($0) } ?? "null"
         let idVal = id.map { escapeJSString($0) } ?? "null"
         let script = """
@@ -287,16 +246,18 @@ class NetNewsWireAPI {
               JSON.stringify({ ok: true, deeplink: deepLink, url: targetUrl });
             }
             """
-        return try runJXA(script) ?? ["ok": false, "error": "Script returned no output"]
+        return try await runJXA(script) ?? ["ok": false, "error": "Script returned no output"]
     }
-}
 
-enum BridgeError: Error, LocalizedError {
-    case scriptFailed(String)
+    // MARK: - Helpers
 
-    var errorDescription: String? {
-        switch self {
-        case .scriptFailed(let msg): return msg
-        }
+    private func escapeJSString(_ s: String) -> String {
+        let escaped =
+            s
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        return "\"\(escaped)\""
     }
 }

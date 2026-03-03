@@ -153,73 +153,73 @@ router.get("schema") { _, _ -> Response in
     return try bridgeResponse(schema)
 }
 
-router.get("feeds") { _, _ -> Response in
-    let feeds = try nnwAPI.getFeeds()
+router.get("feeds") { _, _ async throws -> Response in
+    let feeds = try await nnwAPI.getFeeds()
     return try bridgeResponse(["ok": true, "result": feeds])
 }
 
-router.get("articles") { req, _ -> Response in
+router.get("articles") { req, _ async throws -> Response in
     let unread = req.uri.queryParameters.get("unread") == "true"
     let starred = req.uri.queryParameters.get("starred") == "true"
     let feedId: String? = req.uri.queryParameters.get("feedId")
     let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 50, 200)
     let content = req.uri.queryParameters.get("content") == "true"
 
-    let articles = try nnwAPI.getArticles(
+    let articles = try await nnwAPI.getArticles(
         unread: unread, starred: starred, feedId: feedId, limit: limit, includeContent: content)
     return try bridgeResponse(["ok": true, "result": articles])
 }
 
-router.get("article") { req, _ -> Response in
+router.get("article") { req, _ async throws -> Response in
     guard let id: String = req.uri.queryParameters.get("id") else {
         throw HTTPError(.badRequest, message: "'id' parameter is required")
     }
-    let article = try nnwAPI.getArticle(id: id)
+    let article = try await nnwAPI.getArticle(id: id)
     return try bridgeResponse(["ok": true, "result": article as Any])
 }
 
-router.get("current") { _, _ -> Response in
-    let article = try nnwAPI.getCurrentArticle()
+router.get("current") { _, _ async throws -> Response in
+    let article = try await nnwAPI.getCurrentArticle()
     return try bridgeResponse(["ok": true, "result": article as Any])
 }
 
-router.post("articles/read") { req, ctx -> Response in
+router.post("articles/read") { req, ctx async throws -> Response in
     struct SetReadRequest: Decodable {
         let ids: [String]
         let read: Bool?
     }
 
     let body = try await req.decode(as: SetReadRequest.self, context: ctx)
-    let result = try nnwAPI.setReadStatus(ids: body.ids, read: body.read ?? true)
+    let result = try await nnwAPI.setReadStatus(ids: body.ids, read: body.read ?? true)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.post("articles/starred") { req, ctx -> Response in
+router.post("articles/starred") { req, ctx async throws -> Response in
     struct SetStarredRequest: Decodable {
         let ids: [String]
         let starred: Bool?
     }
 
     let body = try await req.decode(as: SetStarredRequest.self, context: ctx)
-    let result = try nnwAPI.setStarredStatus(ids: body.ids, starred: body.starred ?? true)
+    let result = try await nnwAPI.setStarredStatus(ids: body.ids, starred: body.starred ?? true)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.post("open") { req, ctx -> Response in
+router.post("open") { req, ctx async throws -> Response in
     struct OpenRequest: Decodable {
         let url: String?
         let id: String?
     }
 
     let body = try await req.decode(as: OpenRequest.self, context: ctx)
-    let result = try nnwAPI.openArticle(url: body.url, id: body.id)
+    let result = try await nnwAPI.openArticle(url: body.url, id: body.id)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
-router.get("deeplink") { req, _ -> Response in
+router.get("deeplink") { req, _ async throws -> Response in
     let url: String? = req.uri.queryParameters.get("url")
     let id: String? = req.uri.queryParameters.get("id")
-    let result = try nnwAPI.getDeeplink(url: url, id: id)
+    let result = try await nnwAPI.getDeeplink(url: url, id: id)
     return try bridgeResponse(["ok": true, "result": result])
 }
 
