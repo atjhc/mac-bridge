@@ -1,25 +1,20 @@
-import Foundation
+import BridgeHTTP
+import Hummingbird
 import OSLog
-import Vapor
-import BridgeCore
 
-let logger = os.Logger(subsystem: "com.user.bridge", category: "notes")
-
-let app = try Application(.detect())
-defer { app.shutdown() }
-
-app.logger.logLevel = .notice
+let logger = Logger(subsystem: "com.user.bridge", category: "notes")
 
 let notesAPI = NotesAPI()
 
-let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
+let rateLimit = Int(ProcessInfo.processInfo.environment["RATE_LIMIT_PER_SECOND"] ?? "10") ?? 10
 let rateLimiter = RateLimiter(limit: rateLimit)
-app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
-app.middleware.use(LoggingMiddleware(log: logger))
-app.middleware.use(FormatMiddleware())
 
-// Help endpoint
-app.get("help") { req -> Response in
+let router = Router()
+router.add(middleware: BridgeRateLimitMiddleware(limiter: rateLimiter, log: logger))
+router.add(middleware: BridgeLoggingMiddleware(log: logger))
+router.add(middleware: BridgeFormatMiddleware())
+
+router.get("help") { _, _ -> Response in
     let markdown = """
         # Notes Bridge API
 
@@ -97,43 +92,30 @@ app.get("help") { req -> Response in
         ### GET /schema
         Returns machine-readable endpoint definitions. Use `?format=json` for structured JSON.
         """
-    return try responseJSON(["ok": true, "result": ["help": markdown]])
+    return try bridgeResponse(["ok": true, "result": ["help": markdown]])
 }
 
-// Health check
-app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "notes-bridge",
-        ],
-    ]
-    return try responseJSON(response)
+router.get("health") { _, _ -> Response in
+    let result = notesAPI.healthCheck()
+    let isOk = (result["status"] as? String) == "ok"
+    return try bridgeResponse(["ok": isOk, "result": result])
 }
 
-// Schema endpoint
-app.get("schema") { req -> Response in
+router.get("schema") { _, _ -> Response in
     let schema: [String: Any] = [
         "ok": true,
         "result": [
             "app": "notes-bridge",
             "endpoints": [
+                ["method": "GET", "path": "/accounts", "params": []],
                 [
-                    "method": "GET",
-                    "path": "/accounts",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/folders",
+                    "method": "GET", "path": "/folders",
                     "params": [
                         ["name": "account", "from": "query", "type": "string"]
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/notes",
+                    "method": "GET", "path": "/notes",
                     "params": [
                         ["name": "folder", "from": "query", "type": "string"],
                         ["name": "account", "from": "query", "type": "string"],
@@ -142,15 +124,13 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/note",
+                    "method": "GET", "path": "/note",
                     "params": [
                         ["name": "id", "from": "query", "type": "string", "required": true]
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/notes",
+                    "method": "POST", "path": "/notes",
                     "params": [
                         ["name": "name", "from": "body", "type": "string", "required": true],
                         ["name": "body", "from": "body", "type": "string", "required": true],
@@ -159,8 +139,7 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/notes/update",
+                    "method": "POST", "path": "/notes/update",
                     "params": [
                         ["name": "id", "from": "body", "type": "string", "required": true],
                         ["name": "name", "from": "body", "type": "string"],
@@ -168,141 +147,122 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/notes/delete",
+                    "method": "POST", "path": "/notes/delete",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true]
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/show",
+                    "method": "POST", "path": "/show",
                     "params": [
                         ["name": "id", "from": "body", "type": "string", "required": true]
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/search",
+                    "method": "GET", "path": "/search",
                     "params": [
                         ["name": "q", "from": "query", "type": "string", "required": true],
                         ["name": "limit", "from": "query", "type": "number", "default": 20],
                     ],
                 ],
-                [
-                    "method": "GET",
-                    "path": "/help",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/health",
-                    "params": [],
-                ],
+                ["method": "GET", "path": "/help", "params": []],
+                ["method": "GET", "path": "/health", "params": []],
             ],
         ],
     ]
-    return try responseJSON(schema)
+    return try bridgeResponse(schema)
 }
 
-// GET /accounts
-app.get("accounts") { req throws -> Response in
+router.get("accounts") { _, _ -> Response in
     let accounts = try notesAPI.getAccounts()
-    return try responseJSON(["ok": true, "result": accounts])
+    return try bridgeResponse(["ok": true, "result": accounts])
 }
 
-// GET /folders
-app.get("folders") { req throws -> Response in
-    let account = req.query[String.self, at: "account"]
+router.get("folders") { req, _ -> Response in
+    let account: String? = req.uri.queryParameters.get("account")
     let folders = try notesAPI.getFolders(account: account)
-    return try responseJSON(["ok": true, "result": folders])
+    return try bridgeResponse(["ok": true, "result": folders])
 }
 
-// GET /notes
-app.get("notes") { req throws -> Response in
-    let folder = req.query[String.self, at: "folder"]
-    let account = req.query[String.self, at: "account"]
-    let search = req.query[String.self, at: "search"]
-    let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
+router.get("notes") { req, _ -> Response in
+    let folder: String? = req.uri.queryParameters.get("folder")
+    let account: String? = req.uri.queryParameters.get("account")
+    let search: String? = req.uri.queryParameters.get("search")
+    let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 50, 200)
 
     let notes = try notesAPI.getNotes(
         folder: folder, account: account, search: search, limit: limit)
-    return try responseJSON(["ok": true, "result": notes])
+    return try bridgeResponse(["ok": true, "result": notes])
 }
 
-// GET /note
-app.get("note") { req throws -> Response in
-    guard let id = req.query[String.self, at: "id"] else {
-        throw Abort(.badRequest, reason: "'id' parameter is required")
+router.get("note") { req, _ -> Response in
+    guard let id: String = req.uri.queryParameters.get("id") else {
+        throw HTTPError(.badRequest, message: "'id' parameter is required")
     }
     let note = try notesAPI.getNote(id: id)
-    return try responseJSON(["ok": true, "result": note as Any])
+    return try bridgeResponse(["ok": true, "result": note as Any])
 }
 
-// POST /notes
-app.post("notes") { req throws -> Response in
-    struct CreateNoteRequest: Content {
+router.post("notes") { req, ctx -> Response in
+    struct CreateNoteRequest: Decodable {
         let name: String
         let body: String
         let folder: String?
         let account: String?
     }
 
-    let body = try req.content.decode(CreateNoteRequest.self)
+    let body = try await req.decode(as: CreateNoteRequest.self, context: ctx)
     let result = try notesAPI.createNote(
         name: body.name, body: body.body, folder: body.folder, account: body.account)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// POST /notes/update
-app.post("notes", "update") { req throws -> Response in
-    struct UpdateNoteRequest: Content {
+router.post("notes/update") { req, ctx -> Response in
+    struct UpdateNoteRequest: Decodable {
         let id: String
         let name: String?
         let body: String?
     }
 
-    let body = try req.content.decode(UpdateNoteRequest.self)
+    let body = try await req.decode(as: UpdateNoteRequest.self, context: ctx)
     let result = try notesAPI.updateNote(id: body.id, name: body.name, body: body.body)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// POST /notes/delete
-app.post("notes", "delete") { req throws -> Response in
-    struct DeleteNotesRequest: Content {
+router.post("notes/delete") { req, ctx -> Response in
+    struct DeleteNotesRequest: Decodable {
         let ids: [String]
     }
 
-    let body = try req.content.decode(DeleteNotesRequest.self)
+    let body = try await req.decode(as: DeleteNotesRequest.self, context: ctx)
     let result = try notesAPI.deleteNotes(ids: body.ids)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// POST /show
-app.post("show") { req throws -> Response in
-    struct ShowNoteRequest: Content {
+router.post("show") { req, ctx -> Response in
+    struct ShowNoteRequest: Decodable {
         let id: String
     }
 
-    let body = try req.content.decode(ShowNoteRequest.self)
+    let body = try await req.decode(as: ShowNoteRequest.self, context: ctx)
     let result = try notesAPI.showNote(id: body.id)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// GET /search
-app.get("search") { req throws -> Response in
-    guard let q = req.query[String.self, at: "q"] else {
-        throw Abort(.badRequest, reason: "'q' parameter is required")
+router.get("search") { req, _ -> Response in
+    guard let q: String = req.uri.queryParameters.get("q") else {
+        throw HTTPError(.badRequest, message: "'q' parameter is required")
     }
-    let limit = min(req.query[Int.self, at: "limit"] ?? 20, 100)
+    let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 20, 100)
     let results = try notesAPI.searchNotes(query: q, limit: limit)
-    return try responseJSON(["ok": true, "result": results])
+    return try bridgeResponse(["ok": true, "result": results])
 }
 
-let port = Int(Environment.get("NOTES_BRIDGE_PORT") ?? "7336") ?? 7336
-app.http.server.configuration.hostname = "0.0.0.0"
-app.http.server.configuration.port = port
-
+let port = Int(ProcessInfo.processInfo.environment["NOTES_BRIDGE_PORT"] ?? "7336") ?? 7336
 logger.notice("Listening on http://localhost:\(port)")
-try app.run()
 
+let app = Application(
+    router: router,
+    configuration: .init(address: .hostname("0.0.0.0", port: port))
+)
+try await app.runService()

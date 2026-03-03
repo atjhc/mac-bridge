@@ -1,26 +1,21 @@
+import BridgeHTTP
 import EventKit
+import Hummingbird
 import OSLog
-import Vapor
-import BridgeCore
 
-let logger = os.Logger(subsystem: "com.user.bridge", category: "calendar")
-
-let app = try Application(.detect())
-defer { app.shutdown() }
-
-// Suppress Vapor's verbose request logging - we have our own middleware
-app.logger.logLevel = .notice
+let logger = Logger(subsystem: "com.user.bridge", category: "calendar")
 
 let calendarAPI = CalendarAPI()
 
-let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
+let rateLimit = Int(ProcessInfo.processInfo.environment["RATE_LIMIT_PER_SECOND"] ?? "10") ?? 10
 let rateLimiter = RateLimiter(limit: rateLimit)
-app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
-app.middleware.use(LoggingMiddleware(log: logger))
-app.middleware.use(FormatMiddleware())
 
-// Help endpoint
-app.get("help") { req -> Response in
+let router = Router()
+router.add(middleware: BridgeRateLimitMiddleware(limiter: rateLimiter, log: logger))
+router.add(middleware: BridgeLoggingMiddleware(log: logger))
+router.add(middleware: BridgeFormatMiddleware())
+
+router.get("help") { _, _ -> Response in
     let markdown = """
         # Calendar Bridge API
 
@@ -74,36 +69,24 @@ app.get("help") { req -> Response in
         ### GET /schema
         Returns machine-readable endpoint definitions. Use `?format=json` for structured JSON.
         """
-    return try responseJSON(["ok": true, "result": ["help": markdown]])
+    return try bridgeResponse(["ok": true, "result": ["help": markdown]])
 }
 
-// Health check
-app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "calendar-bridge",
-        ],
-    ]
-    return try responseJSON(response)
+router.get("health") { _, _ -> Response in
+    let result = calendarAPI.healthCheck()
+    let isOk = (result["status"] as? String) == "ok"
+    return try bridgeResponse(["ok": isOk, "result": result])
 }
 
-// Schema endpoint
-app.get("schema") { req -> Response in
+router.get("schema") { _, _ -> Response in
     let schema: [String: Any] = [
         "ok": true,
         "result": [
             "app": "calendar-bridge",
             "endpoints": [
+                ["method": "GET", "path": "/calendars", "params": []],
                 [
-                    "method": "GET",
-                    "path": "/calendars",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/events",
+                    "method": "GET", "path": "/events",
                     "params": [
                         ["name": "calendar", "from": "query", "type": "string"],
                         ["name": "from", "from": "query", "type": "string"],
@@ -114,15 +97,13 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/event",
+                    "method": "GET", "path": "/event",
                     "params": [
                         ["name": "id", "from": "query", "type": "string", "required": true]
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/events",
+                    "method": "POST", "path": "/events",
                     "params": [
                         ["name": "summary", "from": "body", "type": "string", "required": true],
                         ["name": "startDate", "from": "body", "type": "string", "required": true],
@@ -134,43 +115,32 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/events/delete",
+                    "method": "POST", "path": "/events/delete",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
                         ["name": "calendar", "from": "body", "type": "string"],
                     ],
                 ],
-                [
-                    "method": "GET",
-                    "path": "/help",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/health",
-                    "params": [],
-                ],
+                ["method": "GET", "path": "/help", "params": []],
+                ["method": "GET", "path": "/health", "params": []],
             ],
         ],
     ]
-    return try responseJSON(schema)
+    return try bridgeResponse(schema)
 }
 
-// GET /calendars
-app.get("calendars") { req async throws -> Response in
+router.get("calendars") { _, _ -> Response in
     let calendars = try await calendarAPI.getCalendars()
-    return try responseJSON(["ok": true, "result": calendars])
+    return try bridgeResponse(["ok": true, "result": calendars])
 }
 
-// GET /events
-app.get("events") { req async throws -> Response in
-    let calendarName = req.query[String.self, at: "calendar"]
-    let fromStr = req.query[String.self, at: "from"]
-    let toStr = req.query[String.self, at: "to"]
-    let limit = req.query[Int.self, at: "limit"] ?? 100
-    let status = req.query[String.self, at: "status"]
-    let siri = req.query[Bool.self, at: "siri"]
+router.get("events") { req, _ -> Response in
+    let calendarName: String? = req.uri.queryParameters.get("calendar")
+    let fromStr: String? = req.uri.queryParameters.get("from")
+    let toStr: String? = req.uri.queryParameters.get("to")
+    let limit = Int(req.uri.queryParameters.get("limit") ?? "") ?? 100
+    let status: String? = req.uri.queryParameters.get("status")
+    let siri = req.uri.queryParameters.get("siri") == "true"
 
     let from = fromStr.flatMap { ISO8601DateFormatter().date(from: $0) } ?? Date()
     let to =
@@ -185,30 +155,26 @@ app.get("events") { req async throws -> Response in
         statusFilter: status
     )
 
-    // Filter for Siri suggestions (events with messages:// or mail:// URLs)
-    if siri == true {
+    if siri {
         events = events.filter { event in
             guard let url = event["url"] as? String else { return false }
             return url.hasPrefix("messages://") || url.hasPrefix("mail://")
         }
     }
 
-    return try responseJSON(["ok": true, "result": Array(events.prefix(limit))])
+    return try bridgeResponse(["ok": true, "result": Array(events.prefix(limit))])
 }
 
-// GET /event
-app.get("event") { req async throws -> Response in
-    guard let eventId = req.query[String.self, at: "id"] else {
-        throw Abort(.badRequest, reason: "'id' parameter is required")
+router.get("event") { req, _ -> Response in
+    guard let eventId: String = req.uri.queryParameters.get("id") else {
+        throw HTTPError(.badRequest, message: "'id' parameter is required")
     }
-
     let event = try await calendarAPI.getEvent(id: eventId)
-    return try responseJSON(["ok": true, "result": event as Any])
+    return try bridgeResponse(["ok": true, "result": event as Any])
 }
 
-// POST /events
-app.post("events") { req async throws -> Response in
-    struct CreateEventRequest: Content {
+router.post("events") { req, ctx -> Response in
+    struct CreateEventRequest: Decodable {
         let summary: String
         let startDate: String
         let endDate: String
@@ -218,12 +184,12 @@ app.post("events") { req async throws -> Response in
         let allDay: Bool?
     }
 
-    let body = try req.content.decode(CreateEventRequest.self)
+    let body = try await req.decode(as: CreateEventRequest.self, context: ctx)
 
     guard let startDate = ISO8601DateFormatter().date(from: body.startDate),
         let endDate = ISO8601DateFormatter().date(from: body.endDate)
     else {
-        throw Abort(.badRequest, reason: "Invalid date format")
+        throw HTTPError(.badRequest, message: "Invalid date format")
     }
 
     let eventId = try await calendarAPI.createEvent(
@@ -236,26 +202,26 @@ app.post("events") { req async throws -> Response in
         isAllDay: body.allDay ?? false
     )
 
-    return try responseJSON(["ok": true, "result": ["id": eventId]])
+    return try bridgeResponse(["ok": true, "result": ["id": eventId]])
 }
 
-// POST /events/delete
-app.post("events", "delete") { req async throws -> Response in
-    struct DeleteEventsRequest: Content {
+router.post("events/delete") { req, ctx -> Response in
+    struct DeleteEventsRequest: Decodable {
         let ids: [String]
         let calendar: String?
     }
 
-    let body = try req.content.decode(DeleteEventsRequest.self)
+    let body = try await req.decode(as: DeleteEventsRequest.self, context: ctx)
     let deleted = try await calendarAPI.deleteEvents(ids: body.ids)
 
-    return try responseJSON(["ok": true, "result": ["deleted": deleted]])
+    return try bridgeResponse(["ok": true, "result": ["deleted": deleted]])
 }
 
-let port = Int(Environment.get("CALENDAR_BRIDGE_PORT") ?? "7334") ?? 7334
-app.http.server.configuration.hostname = "0.0.0.0"
-app.http.server.configuration.port = port
-
+let port = Int(ProcessInfo.processInfo.environment["CALENDAR_BRIDGE_PORT"] ?? "7334") ?? 7334
 logger.notice("Listening on http://localhost:\(port)")
-try app.run()
 
+let app = Application(
+    router: router,
+    configuration: .init(address: .hostname("0.0.0.0", port: port))
+)
+try await app.runService()

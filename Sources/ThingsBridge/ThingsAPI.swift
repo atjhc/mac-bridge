@@ -1,9 +1,27 @@
+import BridgeCore
 import Foundation
 import OSLog
 
 private let log = Logger(subsystem: "com.user.bridge", category: "things")
 
 class ThingsAPI {
+
+    private let bundleId = "com.culturedcode.ThingsMac"
+
+    // MARK: - Health
+
+    func healthCheck() -> [String: Any] {
+        let installed = isAppInstalled(bundleIdentifier: bundleId)
+        let running = isAppRunning(bundleIdentifier: bundleId)
+        return buildHealthResult(
+            app: "things-bridge",
+            status: installed ? "ok" : "error",
+            details: [
+                "appInstalled": installed,
+                "appRunning": running,
+            ]
+        )
+    }
 
     // MARK: - JXA / AppleScript execution
 
@@ -21,12 +39,16 @@ class ThingsAPI {
         proc.waitUntilExit()
 
         guard proc.terminationStatus == 0 else {
-            let errStr = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let errStr =
+                String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             throw BridgeError.scriptFailed(errStr)
         }
 
         let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let output =
+            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? ""
         guard !output.isEmpty else { return nil }
         return try JSONSerialization.jsonObject(with: Data(output.utf8))
     }
@@ -45,12 +67,16 @@ class ThingsAPI {
         proc.waitUntilExit()
 
         guard proc.terminationStatus == 0 else {
-            let errStr = String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let errStr =
+                String(data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             throw BridgeError.scriptFailed(errStr)
         }
 
         let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let output =
+            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
+            ?? ""
         guard !output.isEmpty else { return nil }
         return try JSONSerialization.jsonObject(with: Data(output.utf8))
     }
@@ -97,7 +123,9 @@ class ThingsAPI {
 
     // MARK: - Todos
 
-    func getTodos(listId: String?, areaId: String?, projectId: String?, status: String, limit: Int) throws -> Any {
+    func getTodos(listId: String?, areaId: String?, projectId: String?, status: String, limit: Int)
+        throws -> Any
+    {
         let todoSource: String
         if let listId {
             todoSource = "todos = app.lists.byId(\(escapeJSString(listId))).toDos();"
@@ -171,7 +199,9 @@ class ThingsAPI {
 
     // MARK: - Create (AppleScript — JXA `make` fails with -2710)
 
-    func createTodo(name: String, notes: String?, dueDate: String?, listId: String?, projectId: String?) throws -> Any {
+    func createTodo(
+        name: String, notes: String?, dueDate: String?, listId: String?, projectId: String?
+    ) throws -> Any {
         var props = ["name: \(escapeASString(name))"]
         if let notes {
             props.append("notes: \(escapeASString(notes))")
@@ -202,7 +232,8 @@ class ThingsAPI {
     // MARK: - Status
 
     func setStatus(ids: [String], status: String) throws -> Any {
-        let idsJS = try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
+        let idsJS =
+            try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
             const app = Application('Things3');
             function safeDate(fn) {
@@ -249,7 +280,8 @@ class ThingsAPI {
     // MARK: - Delete
 
     func deleteTodos(ids: [String]) throws -> Any {
-        let idsJS = try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
+        let idsJS =
+            try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
         let script = """
             const app = Application('Things3');
             const ids = \(idsJS);
@@ -268,7 +300,8 @@ class ThingsAPI {
     // MARK: - Helpers
 
     private func escapeJSString(_ s: String) -> String {
-        let escaped = s
+        let escaped =
+            s
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")
@@ -276,7 +309,8 @@ class ThingsAPI {
     }
 
     private func escapeASString(_ s: String) -> String {
-        let escaped = s
+        let escaped =
+            s
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
         return "\"\(escaped)\""

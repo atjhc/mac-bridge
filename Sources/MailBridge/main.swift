@@ -1,17 +1,12 @@
-import Foundation
+import BridgeHTTP
+import Hummingbird
 import OSLog
-import Vapor
-import BridgeCore
 
-let logger = os.Logger(subsystem: "com.user.bridge", category: "mail")
-
-let app = try Application(.detect())
-defer { app.shutdown() }
+let logger = Logger(subsystem: "com.user.bridge", category: "mail")
 
 let mailAPI = MailBridgeAPI()
 
-// Configure archive mailbox per account (format: "Account1=Mailbox,Account2=Mailbox")
-if let archiveConfig = Environment.get("ARCHIVE_MAILBOXES") {
+if let archiveConfig = ProcessInfo.processInfo.environment["ARCHIVE_MAILBOXES"] {
     for entry in archiveConfig.split(separator: ",") {
         let parts = entry.split(separator: "=", maxSplits: 1)
         guard parts.count == 2 else { continue }
@@ -19,17 +14,15 @@ if let archiveConfig = Environment.get("ARCHIVE_MAILBOXES") {
     }
 }
 
-// Suppress Vapor's verbose request logging - we have our own middleware
-app.logger.logLevel = .notice
-
-let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
+let rateLimit = Int(ProcessInfo.processInfo.environment["RATE_LIMIT_PER_SECOND"] ?? "10") ?? 10
 let rateLimiter = RateLimiter(limit: rateLimit)
-app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
-app.middleware.use(LoggingMiddleware(log: logger))
-app.middleware.use(FormatMiddleware())
 
-// Help endpoint
-app.get("help") { req -> Response in
+let router = Router()
+router.add(middleware: BridgeRateLimitMiddleware(limiter: rateLimiter, log: logger))
+router.add(middleware: BridgeLoggingMiddleware(log: logger))
+router.add(middleware: BridgeFormatMiddleware())
+
+router.get("help") { _, _ -> Response in
     let markdown = """
         # Mail Bridge API
 
@@ -131,43 +124,30 @@ app.get("help") { req -> Response in
         ### GET /schema
         Returns machine-readable endpoint definitions. Use `?format=json` for structured JSON.
         """
-    return try responseJSON(["ok": true, "result": ["help": markdown]])
+    return try bridgeResponse(["ok": true, "result": ["help": markdown]])
 }
 
-// Health check
-app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "mail-bridge",
-        ],
-    ]
-    return try responseJSON(response)
+router.get("health") { _, _ -> Response in
+    let result = mailAPI.healthCheck()
+    let isOk = (result["status"] as? String) == "ok"
+    return try bridgeResponse(["ok": isOk, "result": result])
 }
 
-// Schema endpoint
-app.get("schema") { req -> Response in
+router.get("schema") { _, _ -> Response in
     let schema: [String: Any] = [
         "ok": true,
         "result": [
             "app": "mail-bridge",
             "endpoints": [
+                ["method": "GET", "path": "/accounts", "params": []],
                 [
-                    "method": "GET",
-                    "path": "/accounts",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/mailboxes",
+                    "method": "GET", "path": "/mailboxes",
                     "params": [
                         ["name": "account", "from": "query", "type": "string"]
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/messages",
+                    "method": "GET", "path": "/messages",
                     "params": [
                         ["name": "mailbox", "from": "query", "type": "string", "default": "INBOX"],
                         ["name": "account", "from": "query", "type": "string"],
@@ -179,8 +159,7 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/message",
+                    "method": "GET", "path": "/message",
                     "params": [
                         ["name": "id", "from": "query", "type": "string", "required": true],
                         ["name": "mailbox", "from": "query", "type": "string", "default": "INBOX"],
@@ -192,8 +171,7 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/messages/read",
+                    "method": "POST", "path": "/messages/read",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
                         ["name": "read", "from": "body", "type": "boolean", "default": true],
@@ -202,8 +180,7 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/messages/flag",
+                    "method": "POST", "path": "/messages/flag",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
                         ["name": "flagged", "from": "body", "type": "boolean", "default": true],
@@ -212,8 +189,7 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/messages/move",
+                    "method": "POST", "path": "/messages/move",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
                         ["name": "mailbox", "from": "body", "type": "string", "required": true],
@@ -226,8 +202,7 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/messages/archive",
+                    "method": "POST", "path": "/messages/archive",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
                         ["name": "mailbox", "from": "body", "type": "string", "default": "INBOX"],
@@ -235,8 +210,7 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/messages/delete",
+                    "method": "POST", "path": "/messages/delete",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
                         ["name": "mailbox", "from": "body", "type": "string", "default": "INBOX"],
@@ -244,8 +218,7 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/compose",
+                    "method": "POST", "path": "/compose",
                     "params": [
                         ["name": "to", "from": "body", "type": "string", "required": true],
                         ["name": "subject", "from": "body", "type": "string", "required": true],
@@ -253,105 +226,90 @@ app.get("schema") { req -> Response in
                         ["name": "cc", "from": "body", "type": "string"],
                     ],
                 ],
-                [
-                    "method": "GET",
-                    "path": "/help",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/health",
-                    "params": [],
-                ],
+                ["method": "GET", "path": "/help", "params": []],
+                ["method": "GET", "path": "/health", "params": []],
             ],
         ],
     ]
-    return try responseJSON(schema)
+    return try bridgeResponse(schema)
 }
 
-// GET /accounts
-app.get("accounts") { req -> Response in
+router.get("accounts") { _, _ -> Response in
     let accounts = mailAPI.getAccounts()
-    return try responseJSON(["ok": true, "result": accounts])
+    return try bridgeResponse(["ok": true, "result": accounts])
 }
 
-// GET /mailboxes
-app.get("mailboxes") { req -> Response in
-    let account = req.query[String.self, at: "account"]
+router.get("mailboxes") { req, _ -> Response in
+    let account: String? = req.uri.queryParameters.get("account")
     let mailboxes = mailAPI.getMailboxes(account: account)
-    return try responseJSON(["ok": true, "result": mailboxes])
+    return try bridgeResponse(["ok": true, "result": mailboxes])
 }
 
-// GET /messages
-app.get("messages") { req -> Response in
-    let mailbox = req.query[String.self, at: "mailbox"] ?? "INBOX"
-    let account = req.query[String.self, at: "account"]
-    let unread = req.query[Bool.self, at: "unread"] ?? false
-    let flagged = req.query[Bool.self, at: "flagged"] ?? false
-    let search = req.query[String.self, at: "search"]
-    let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
-    let offset = req.query[Int.self, at: "offset"] ?? 0
+router.get("messages") { req, _ -> Response in
+    let mailbox = req.uri.queryParameters.get("mailbox") ?? "INBOX"
+    let account: String? = req.uri.queryParameters.get("account")
+    let unread = req.uri.queryParameters.get("unread") == "true"
+    let flagged = req.uri.queryParameters.get("flagged") == "true"
+    let search: String? = req.uri.queryParameters.get("search")
+    let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 50, 200)
+    let offset = Int(req.uri.queryParameters.get("offset") ?? "") ?? 0
 
     let messages = mailAPI.getMessages(
         mailbox: mailbox, account: account, unread: unread, flagged: flagged,
         search: search, limit: limit, offset: offset)
 
-    return try responseJSON(["ok": true, "result": messages])
+    return try bridgeResponse(["ok": true, "result": messages])
 }
 
-// GET /message
-app.get("message") { req -> Response in
-    guard let id = req.query[String.self, at: "id"] else {
-        throw Abort(.badRequest, reason: "'id' parameter is required")
+router.get("message") { req, _ -> Response in
+    guard let id: String = req.uri.queryParameters.get("id") else {
+        throw HTTPError(.badRequest, message: "'id' parameter is required")
     }
 
-    let mailbox = req.query[String.self, at: "mailbox"] ?? "INBOX"
-    let account = req.query[String.self, at: "account"]
-    let includeSource = req.query[Bool.self, at: "includeSource"] ?? false
+    let mailbox = req.uri.queryParameters.get("mailbox") ?? "INBOX"
+    let account: String? = req.uri.queryParameters.get("account")
+    let includeSource = req.uri.queryParameters.get("includeSource") == "true"
 
     let message = mailAPI.getMessage(
         id: id, mailbox: mailbox, account: account, includeSource: includeSource)
 
-    return try responseJSON(["ok": true, "result": message as Any])
+    return try bridgeResponse(["ok": true, "result": message as Any])
 }
 
-// POST /messages/read
-app.post("messages", "read") { req async throws -> Response in
-    struct SetReadStatusRequest: Content {
+router.post("messages/read") { req, ctx -> Response in
+    struct SetReadStatusRequest: Decodable {
         let ids: [String]
         let read: Bool?
         let mailbox: String?
         let account: String?
     }
 
-    let body = try req.content.decode(SetReadStatusRequest.self)
+    let body = try await req.decode(as: SetReadStatusRequest.self, context: ctx)
     let updated = mailAPI.setReadStatus(
         ids: body.ids, read: body.read ?? true,
         mailbox: body.mailbox ?? "INBOX", account: body.account)
 
-    return try responseJSON(["ok": true, "result": ["updated": updated]])
+    return try bridgeResponse(["ok": true, "result": ["updated": updated]])
 }
 
-// POST /messages/flag
-app.post("messages", "flag") { req async throws -> Response in
-    struct SetFlaggedStatusRequest: Content {
+router.post("messages/flag") { req, ctx -> Response in
+    struct SetFlaggedStatusRequest: Decodable {
         let ids: [String]
         let flagged: Bool?
         let mailbox: String?
         let account: String?
     }
 
-    let body = try req.content.decode(SetFlaggedStatusRequest.self)
+    let body = try await req.decode(as: SetFlaggedStatusRequest.self, context: ctx)
     let updated = mailAPI.setFlaggedStatus(
         ids: body.ids, flagged: body.flagged ?? true,
         mailbox: body.mailbox ?? "INBOX", account: body.account)
 
-    return try responseJSON(["ok": true, "result": ["updated": updated]])
+    return try bridgeResponse(["ok": true, "result": ["updated": updated]])
 }
 
-// POST /messages/move
-app.post("messages", "move") { req async throws -> Response in
-    struct MoveMessagesRequest: Content {
+router.post("messages/move") { req, ctx -> Response in
+    struct MoveMessagesRequest: Decodable {
         let ids: [String]
         let mailbox: String
         let account: String?
@@ -359,76 +317,74 @@ app.post("messages", "move") { req async throws -> Response in
         let fromAccount: String?
     }
 
-    let body = try req.content.decode(MoveMessagesRequest.self)
+    let body = try await req.decode(as: MoveMessagesRequest.self, context: ctx)
     let result = mailAPI.moveMessages(
         ids: body.ids, toMailbox: body.mailbox, toAccount: body.account,
         fromMailbox: body.fromMailbox ?? "INBOX", fromAccount: body.fromAccount)
 
     if let error = result.error {
-        return try responseJSON(["ok": false, "error": error])
+        return try bridgeResponse(["ok": false, "error": error])
     }
 
-    return try responseJSON(["ok": true, "result": ["moved": result.moved]])
+    return try bridgeResponse(["ok": true, "result": ["moved": result.moved]])
 }
 
-// POST /messages/archive
-app.post("messages", "archive") { req async throws -> Response in
-    struct ArchiveMessagesRequest: Content {
+router.post("messages/archive") { req, ctx -> Response in
+    struct ArchiveMessagesRequest: Decodable {
         let ids: [String]
         let mailbox: String?
         let account: String?
     }
 
-    let body = try req.content.decode(ArchiveMessagesRequest.self)
+    let body = try await req.decode(as: ArchiveMessagesRequest.self, context: ctx)
     let result = mailAPI.archiveMessages(
         ids: body.ids, mailbox: body.mailbox ?? "INBOX", account: body.account)
 
     if let error = result.error {
-        return try responseJSON(["ok": false, "error": error])
+        return try bridgeResponse(["ok": false, "error": error])
     }
 
-    return try responseJSON(["ok": true, "result": ["archived": result.archived]])
+    return try bridgeResponse(["ok": true, "result": ["archived": result.archived]])
 }
 
-// POST /messages/delete
-app.post("messages", "delete") { req async throws -> Response in
-    struct DeleteMessagesRequest: Content {
+router.post("messages/delete") { req, ctx -> Response in
+    struct DeleteMessagesRequest: Decodable {
         let ids: [String]
         let mailbox: String?
         let account: String?
     }
 
-    let body = try req.content.decode(DeleteMessagesRequest.self)
+    let body = try await req.decode(as: DeleteMessagesRequest.self, context: ctx)
     let deleted = mailAPI.deleteMessages(
         ids: body.ids, mailbox: body.mailbox ?? "INBOX", account: body.account)
 
-    return try responseJSON(["ok": true, "result": ["deleted": deleted]])
+    return try bridgeResponse(["ok": true, "result": ["deleted": deleted]])
 }
 
-// POST /compose
-app.post("compose") { req async throws -> Response in
-    struct ComposeMessageRequest: Content {
+router.post("compose") { req, ctx -> Response in
+    struct ComposeMessageRequest: Decodable {
         let to: String
         let subject: String
         let body: String
         let cc: String?
     }
 
-    let body = try req.content.decode(ComposeMessageRequest.self)
+    let body = try await req.decode(as: ComposeMessageRequest.self, context: ctx)
     let result = mailAPI.composeMessage(
         to: body.to, subject: body.subject, body: body.body, cc: body.cc)
 
     if let error = result.error {
-        return try responseJSON(["ok": false, "error": error])
+        return try bridgeResponse(["ok": false, "error": error])
     }
 
-    return try responseJSON(["ok": true, "result": ["sent": result.sent]])
+    return try bridgeResponse(["ok": true, "result": ["sent": result.sent]])
 }
 
-let port = Int(Environment.get("MAIL_BRIDGE_PORT") ?? "7333") ?? 7333
-app.http.server.configuration.hostname = "0.0.0.0"
-app.http.server.configuration.port = port
-
+let port = Int(ProcessInfo.processInfo.environment["MAIL_BRIDGE_PORT"] ?? "7333") ?? 7333
 logger.notice("Listening on http://localhost:\(port)")
-try app.run()
 
+let app = Application(
+    router: router,
+    configuration: .init(address: .hostname("0.0.0.0", port: port))
+)
+try await app.runService()

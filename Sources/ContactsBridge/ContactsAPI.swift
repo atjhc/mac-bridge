@@ -1,3 +1,4 @@
+import BridgeCore
 import Contacts
 import Foundation
 import OSLog
@@ -23,6 +24,16 @@ class ContactsAPI {
         } catch {
             log.error("Failed to request access: \(error)")
         }
+    }
+
+    // MARK: - Health
+
+    func healthCheck() -> [String: Any] {
+        buildHealthResult(
+            app: "contacts-bridge",
+            status: hasAccess ? "ok" : "error",
+            details: ["hasAccess": hasAccess]
+        )
     }
 
     private func ensureAccess() throws {

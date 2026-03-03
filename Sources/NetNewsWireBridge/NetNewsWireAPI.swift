@@ -1,9 +1,27 @@
+import BridgeCore
 import Foundation
 import OSLog
 
 private let log = Logger(subsystem: "com.user.bridge", category: "nnw")
 
 class NetNewsWireAPI {
+
+    private let bundleId = "com.ranchero.NetNewsWire-Evergreen"
+
+    // MARK: - Health
+
+    func healthCheck() -> [String: Any] {
+        let installed = isAppInstalled(bundleIdentifier: bundleId)
+        let running = isAppRunning(bundleIdentifier: bundleId)
+        return buildHealthResult(
+            app: "nnw-bridge",
+            status: installed ? "ok" : "error",
+            details: [
+                "appInstalled": installed,
+                "appRunning": running,
+            ]
+        )
+    }
 
     // MARK: - JXA execution
 
@@ -37,7 +55,8 @@ class NetNewsWireAPI {
     }
 
     private func escapeJSString(_ s: String) -> String {
-        let escaped = s
+        let escaped =
+            s
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")

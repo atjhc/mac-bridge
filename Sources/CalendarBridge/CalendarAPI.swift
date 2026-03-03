@@ -1,3 +1,4 @@
+import BridgeCore
 import EventKit
 import Foundation
 import OSLog
@@ -24,6 +25,16 @@ class CalendarAPI {
         } catch {
             log.error("Failed to request access: \(error)")
         }
+    }
+
+    // MARK: - Health
+
+    func healthCheck() -> [String: Any] {
+        buildHealthResult(
+            app: "calendar-bridge",
+            status: hasAccess ? "ok" : "error",
+            details: ["hasAccess": hasAccess]
+        )
     }
 
     private func ensureAccess() throws {

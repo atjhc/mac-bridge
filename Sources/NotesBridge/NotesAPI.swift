@@ -1,9 +1,27 @@
+import BridgeCore
 import Foundation
 import OSLog
 
 private let log = Logger(subsystem: "com.user.bridge", category: "notes")
 
 class NotesAPI {
+
+    private let bundleId = "com.apple.Notes"
+
+    // MARK: - Health
+
+    func healthCheck() -> [String: Any] {
+        let installed = isAppInstalled(bundleIdentifier: bundleId)
+        let running = isAppRunning(bundleIdentifier: bundleId)
+        return buildHealthResult(
+            app: "notes-bridge",
+            status: installed ? "ok" : "error",
+            details: [
+                "appInstalled": installed,
+                "appRunning": running,
+            ]
+        )
+    }
 
     // MARK: - JXA execution
 
@@ -37,7 +55,8 @@ class NotesAPI {
     }
 
     private func escapeJSString(_ s: String) -> String {
-        let escaped = s
+        let escaped =
+            s
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
             .replacingOccurrences(of: "\n", with: "\\n")

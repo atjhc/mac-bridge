@@ -1,26 +1,20 @@
-import Foundation
+import BridgeHTTP
+import Hummingbird
 import OSLog
-import Vapor
-import BridgeCore
 
-let logger = os.Logger(subsystem: "com.user.bridge", category: "things")
-
-let app = try Application(.detect())
-defer { app.shutdown() }
-
-// Suppress Vapor's verbose request logging - we have our own middleware
-app.logger.logLevel = .notice
+let logger = Logger(subsystem: "com.user.bridge", category: "things")
 
 let thingsAPI = ThingsAPI()
 
-let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
+let rateLimit = Int(ProcessInfo.processInfo.environment["RATE_LIMIT_PER_SECOND"] ?? "10") ?? 10
 let rateLimiter = RateLimiter(limit: rateLimit)
-app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
-app.middleware.use(LoggingMiddleware(log: logger))
-app.middleware.use(FormatMiddleware())
 
-// Help endpoint
-app.get("help") { req -> Response in
+let router = Router()
+router.add(middleware: BridgeRateLimitMiddleware(limiter: rateLimiter, log: logger))
+router.add(middleware: BridgeLoggingMiddleware(log: logger))
+router.add(middleware: BridgeFormatMiddleware())
+
+router.get("help") { _, _ -> Response in
     let markdown = """
         # Things 3 Bridge API
 
@@ -95,48 +89,31 @@ app.get("help") { req -> Response in
         ### GET /schema
         Returns machine-readable endpoint definitions. Use `?format=json` for structured JSON.
         """
-    return try responseJSON(["ok": true, "result": ["help": markdown]])
+    return try bridgeResponse(["ok": true, "result": ["help": markdown]])
 }
 
-// Health check
-app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "things-bridge",
-        ],
-    ]
-    return try responseJSON(response)
+router.get("health") { _, _ -> Response in
+    let result = thingsAPI.healthCheck()
+    let isOk = (result["status"] as? String) == "ok"
+    return try bridgeResponse(["ok": isOk, "result": result])
 }
 
-// Schema endpoint
-app.get("schema") { req -> Response in
+router.get("schema") { _, _ -> Response in
     let schema: [String: Any] = [
         "ok": true,
         "result": [
             "app": "things-bridge",
             "endpoints": [
+                ["method": "GET", "path": "/lists", "params": []],
+                ["method": "GET", "path": "/areas", "params": []],
                 [
-                    "method": "GET",
-                    "path": "/lists",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/areas",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/projects",
+                    "method": "GET", "path": "/projects",
                     "params": [
                         ["name": "areaId", "from": "query", "type": "string"]
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/todos",
+                    "method": "GET", "path": "/todos",
                     "params": [
                         ["name": "listId", "from": "query", "type": "string"],
                         ["name": "areaId", "from": "query", "type": "string"],
@@ -146,15 +123,13 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/todo",
+                    "method": "GET", "path": "/todo",
                     "params": [
                         ["name": "id", "from": "query", "type": "string", "required": true]
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/todos",
+                    "method": "POST", "path": "/todos",
                     "params": [
                         ["name": "name", "from": "body", "type": "string", "required": true],
                         ["name": "notes", "from": "body", "type": "string"],
@@ -164,84 +139,65 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/todos/status",
+                    "method": "POST", "path": "/todos/status",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
-                        [
-                            "name": "status", "from": "body", "type": "string",
-                            "required": true,
-                        ],
+                        ["name": "status", "from": "body", "type": "string", "required": true],
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/todos/delete",
+                    "method": "POST", "path": "/todos/delete",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true]
                     ],
                 ],
-                [
-                    "method": "GET",
-                    "path": "/help",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/health",
-                    "params": [],
-                ],
+                ["method": "GET", "path": "/help", "params": []],
+                ["method": "GET", "path": "/health", "params": []],
             ],
         ],
     ]
-    return try responseJSON(schema)
+    return try bridgeResponse(schema)
 }
 
-// GET /lists
-app.get("lists") { req throws -> Response in
+router.get("lists") { _, _ -> Response in
     let lists = try thingsAPI.getLists()
-    return try responseJSON(["ok": true, "result": lists])
+    return try bridgeResponse(["ok": true, "result": lists])
 }
 
-// GET /areas
-app.get("areas") { req throws -> Response in
+router.get("areas") { _, _ -> Response in
     let areas = try thingsAPI.getAreas()
-    return try responseJSON(["ok": true, "result": areas])
+    return try bridgeResponse(["ok": true, "result": areas])
 }
 
-// GET /projects
-app.get("projects") { req throws -> Response in
-    let areaId = req.query[String.self, at: "areaId"]
+router.get("projects") { req, _ -> Response in
+    let areaId: String? = req.uri.queryParameters.get("areaId")
     let projects = try thingsAPI.getProjects(areaId: areaId)
-    return try responseJSON(["ok": true, "result": projects])
+    return try bridgeResponse(["ok": true, "result": projects])
 }
 
-// GET /todos
-app.get("todos") { req throws -> Response in
-    let listId = req.query[String.self, at: "listId"]
-    let areaId = req.query[String.self, at: "areaId"]
-    let projectId = req.query[String.self, at: "projectId"]
-    let status = req.query[String.self, at: "status"] ?? "open"
-    let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
+router.get("todos") { req, _ -> Response in
+    let listId: String? = req.uri.queryParameters.get("listId")
+    let areaId: String? = req.uri.queryParameters.get("areaId")
+    let projectId: String? = req.uri.queryParameters.get("projectId")
+    let status = req.uri.queryParameters.get("status") ?? "open"
+    let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 50, 200)
 
     let todos = try thingsAPI.getTodos(
         listId: listId, areaId: areaId, projectId: projectId,
         status: status, limit: limit)
-    return try responseJSON(["ok": true, "result": todos])
+    return try bridgeResponse(["ok": true, "result": todos])
 }
 
-// GET /todo
-app.get("todo") { req throws -> Response in
-    guard let id = req.query[String.self, at: "id"] else {
-        throw Abort(.badRequest, reason: "'id' parameter is required")
+router.get("todo") { req, _ -> Response in
+    guard let id: String = req.uri.queryParameters.get("id") else {
+        throw HTTPError(.badRequest, message: "'id' parameter is required")
     }
     let todo = try thingsAPI.getTodo(id: id)
-    return try responseJSON(["ok": true, "result": todo as Any])
+    return try bridgeResponse(["ok": true, "result": todo as Any])
 }
 
-// POST /todos
-app.post("todos") { req throws -> Response in
-    struct CreateTodoRequest: Content {
+router.post("todos") { req, ctx -> Response in
+    struct CreateTodoRequest: Decodable {
         let name: String
         let notes: String?
         let dueDate: String?
@@ -249,40 +205,39 @@ app.post("todos") { req throws -> Response in
         let projectId: String?
     }
 
-    let body = try req.content.decode(CreateTodoRequest.self)
+    let body = try await req.decode(as: CreateTodoRequest.self, context: ctx)
     let result = try thingsAPI.createTodo(
         name: body.name, notes: body.notes, dueDate: body.dueDate,
         listId: body.listId, projectId: body.projectId)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// POST /todos/status
-app.post("todos", "status") { req throws -> Response in
-    struct SetStatusRequest: Content {
+router.post("todos/status") { req, ctx -> Response in
+    struct SetStatusRequest: Decodable {
         let ids: [String]
         let status: String
     }
 
-    let body = try req.content.decode(SetStatusRequest.self)
+    let body = try await req.decode(as: SetStatusRequest.self, context: ctx)
     let result = try thingsAPI.setStatus(ids: body.ids, status: body.status)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// POST /todos/delete
-app.post("todos", "delete") { req throws -> Response in
-    struct DeleteTodosRequest: Content {
+router.post("todos/delete") { req, ctx -> Response in
+    struct DeleteTodosRequest: Decodable {
         let ids: [String]
     }
 
-    let body = try req.content.decode(DeleteTodosRequest.self)
+    let body = try await req.decode(as: DeleteTodosRequest.self, context: ctx)
     let result = try thingsAPI.deleteTodos(ids: body.ids)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-let port = Int(Environment.get("THINGS_BRIDGE_PORT") ?? "7332") ?? 7332
-app.http.server.configuration.hostname = "0.0.0.0"
-app.http.server.configuration.port = port
-
+let port = Int(ProcessInfo.processInfo.environment["THINGS_BRIDGE_PORT"] ?? "7332") ?? 7332
 logger.notice("Listening on http://localhost:\(port)")
-try app.run()
 
+let app = Application(
+    router: router,
+    configuration: .init(address: .hostname("0.0.0.0", port: port))
+)
+try await app.runService()

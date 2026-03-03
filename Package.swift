@@ -7,56 +7,42 @@ let package = Package(
         .macOS(.v14)
     ],
     dependencies: [
-        .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0")
+        .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0")
     ],
     targets: [
         .target(
-            name: "BridgeCore",
+            name: "BridgeCore"
+        ),
+        .target(
+            name: "BridgeHTTP",
             dependencies: [
-                .product(name: "Vapor", package: "vapor")
+                "BridgeCore",
+                .product(name: "Hummingbird", package: "hummingbird"),
             ]
         ),
         .executableTarget(
             name: "CalendarBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
+            dependencies: ["BridgeHTTP"]
         ),
         .executableTarget(
             name: "ContactsBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
+            dependencies: ["BridgeHTTP"]
         ),
         .executableTarget(
             name: "MailBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
+            dependencies: ["BridgeHTTP"]
         ),
         .executableTarget(
             name: "ThingsBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
+            dependencies: ["BridgeHTTP"]
         ),
         .executableTarget(
             name: "NotesBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
+            dependencies: ["BridgeHTTP"]
         ),
         .executableTarget(
             name: "NetNewsWireBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
+            dependencies: ["BridgeHTTP"]
         ),
         .testTarget(
             name: "BridgeCoreTests",

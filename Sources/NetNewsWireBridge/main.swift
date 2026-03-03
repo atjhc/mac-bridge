@@ -1,25 +1,20 @@
-import Foundation
+import BridgeHTTP
+import Hummingbird
 import OSLog
-import Vapor
-import BridgeCore
 
-let logger = os.Logger(subsystem: "com.user.bridge", category: "nnw")
-
-let app = try Application(.detect())
-defer { app.shutdown() }
-
-app.logger.logLevel = .notice
+let logger = Logger(subsystem: "com.user.bridge", category: "nnw")
 
 let nnwAPI = NetNewsWireAPI()
 
-let rateLimit = Int(Environment.get("RATE_LIMIT_PER_SECOND") ?? "10") ?? 10
+let rateLimit = Int(ProcessInfo.processInfo.environment["RATE_LIMIT_PER_SECOND"] ?? "10") ?? 10
 let rateLimiter = RateLimiter(limit: rateLimit)
-app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
-app.middleware.use(LoggingMiddleware(log: logger))
-app.middleware.use(FormatMiddleware())
 
-// Help endpoint
-app.get("help") { req -> Response in
+let router = Router()
+router.add(middleware: BridgeRateLimitMiddleware(limiter: rateLimiter, log: logger))
+router.add(middleware: BridgeLoggingMiddleware(log: logger))
+router.add(middleware: BridgeFormatMiddleware())
+
+router.get("help") { _, _ -> Response in
     let markdown = """
         # NetNewsWire Bridge API
 
@@ -89,36 +84,24 @@ app.get("help") { req -> Response in
         ### GET /schema
         Returns machine-readable endpoint definitions. Use `?format=json` for structured JSON.
         """
-    return try responseJSON(["ok": true, "result": ["help": markdown]])
+    return try bridgeResponse(["ok": true, "result": ["help": markdown]])
 }
 
-// Health check
-app.get("health") { req -> Response in
-    let response: [String: Any] = [
-        "ok": true,
-        "result": [
-            "status": "ok",
-            "app": "nnw-bridge",
-        ],
-    ]
-    return try responseJSON(response)
+router.get("health") { _, _ -> Response in
+    let result = nnwAPI.healthCheck()
+    let isOk = (result["status"] as? String) == "ok"
+    return try bridgeResponse(["ok": isOk, "result": result])
 }
 
-// Schema endpoint
-app.get("schema") { req -> Response in
+router.get("schema") { _, _ -> Response in
     let schema: [String: Any] = [
         "ok": true,
         "result": [
             "app": "nnw-bridge",
             "endpoints": [
+                ["method": "GET", "path": "/feeds", "params": []],
                 [
-                    "method": "GET",
-                    "path": "/feeds",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/articles",
+                    "method": "GET", "path": "/articles",
                     "params": [
                         ["name": "unread", "from": "query", "type": "boolean", "default": false],
                         ["name": "starred", "from": "query", "type": "boolean", "default": false],
@@ -128,150 +111,123 @@ app.get("schema") { req -> Response in
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/article",
+                    "method": "GET", "path": "/article",
                     "params": [
                         ["name": "id", "from": "query", "type": "string", "required": true]
                     ],
                 ],
+                ["method": "GET", "path": "/current", "params": []],
                 [
-                    "method": "GET",
-                    "path": "/current",
-                    "params": [],
-                ],
-                [
-                    "method": "POST",
-                    "path": "/articles/read",
+                    "method": "POST", "path": "/articles/read",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
                         ["name": "read", "from": "body", "type": "boolean", "default": true],
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/articles/starred",
+                    "method": "POST", "path": "/articles/starred",
                     "params": [
                         ["name": "ids", "from": "body", "type": "string[]", "required": true],
-                        [
-                            "name": "starred", "from": "body", "type": "boolean",
-                            "default": true,
-                        ],
+                        ["name": "starred", "from": "body", "type": "boolean", "default": true],
                     ],
                 ],
                 [
-                    "method": "POST",
-                    "path": "/open",
+                    "method": "POST", "path": "/open",
                     "params": [
                         ["name": "url", "from": "body", "type": "string"],
                         ["name": "id", "from": "body", "type": "string"],
                     ],
                 ],
                 [
-                    "method": "GET",
-                    "path": "/deeplink",
+                    "method": "GET", "path": "/deeplink",
                     "params": [
                         ["name": "url", "from": "query", "type": "string"],
                         ["name": "id", "from": "query", "type": "string"],
                     ],
                 ],
-                [
-                    "method": "GET",
-                    "path": "/help",
-                    "params": [],
-                ],
-                [
-                    "method": "GET",
-                    "path": "/health",
-                    "params": [],
-                ],
+                ["method": "GET", "path": "/help", "params": []],
+                ["method": "GET", "path": "/health", "params": []],
             ],
         ],
     ]
-    return try responseJSON(schema)
+    return try bridgeResponse(schema)
 }
 
-// GET /feeds
-app.get("feeds") { req throws -> Response in
+router.get("feeds") { _, _ -> Response in
     let feeds = try nnwAPI.getFeeds()
-    return try responseJSON(["ok": true, "result": feeds])
+    return try bridgeResponse(["ok": true, "result": feeds])
 }
 
-// GET /articles
-app.get("articles") { req throws -> Response in
-    let unread = req.query[Bool.self, at: "unread"] ?? false
-    let starred = req.query[Bool.self, at: "starred"] ?? false
-    let feedId = req.query[String.self, at: "feedId"]
-    let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
-    let content = req.query[Bool.self, at: "content"] ?? false
+router.get("articles") { req, _ -> Response in
+    let unread = req.uri.queryParameters.get("unread") == "true"
+    let starred = req.uri.queryParameters.get("starred") == "true"
+    let feedId: String? = req.uri.queryParameters.get("feedId")
+    let limit = min(Int(req.uri.queryParameters.get("limit") ?? "") ?? 50, 200)
+    let content = req.uri.queryParameters.get("content") == "true"
 
     let articles = try nnwAPI.getArticles(
         unread: unread, starred: starred, feedId: feedId, limit: limit, includeContent: content)
-    return try responseJSON(["ok": true, "result": articles])
+    return try bridgeResponse(["ok": true, "result": articles])
 }
 
-// GET /article
-app.get("article") { req throws -> Response in
-    guard let id = req.query[String.self, at: "id"] else {
-        throw Abort(.badRequest, reason: "'id' parameter is required")
+router.get("article") { req, _ -> Response in
+    guard let id: String = req.uri.queryParameters.get("id") else {
+        throw HTTPError(.badRequest, message: "'id' parameter is required")
     }
     let article = try nnwAPI.getArticle(id: id)
-    return try responseJSON(["ok": true, "result": article as Any])
+    return try bridgeResponse(["ok": true, "result": article as Any])
 }
 
-// GET /current
-app.get("current") { req throws -> Response in
+router.get("current") { _, _ -> Response in
     let article = try nnwAPI.getCurrentArticle()
-    return try responseJSON(["ok": true, "result": article as Any])
+    return try bridgeResponse(["ok": true, "result": article as Any])
 }
 
-// POST /articles/read
-app.post("articles", "read") { req throws -> Response in
-    struct SetReadRequest: Content {
+router.post("articles/read") { req, ctx -> Response in
+    struct SetReadRequest: Decodable {
         let ids: [String]
         let read: Bool?
     }
 
-    let body = try req.content.decode(SetReadRequest.self)
+    let body = try await req.decode(as: SetReadRequest.self, context: ctx)
     let result = try nnwAPI.setReadStatus(ids: body.ids, read: body.read ?? true)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// POST /articles/starred
-app.post("articles", "starred") { req throws -> Response in
-    struct SetStarredRequest: Content {
+router.post("articles/starred") { req, ctx -> Response in
+    struct SetStarredRequest: Decodable {
         let ids: [String]
         let starred: Bool?
     }
 
-    let body = try req.content.decode(SetStarredRequest.self)
+    let body = try await req.decode(as: SetStarredRequest.self, context: ctx)
     let result = try nnwAPI.setStarredStatus(ids: body.ids, starred: body.starred ?? true)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// POST /open
-app.post("open") { req throws -> Response in
-    struct OpenRequest: Content {
+router.post("open") { req, ctx -> Response in
+    struct OpenRequest: Decodable {
         let url: String?
         let id: String?
     }
 
-    let body = try req.content.decode(OpenRequest.self)
+    let body = try await req.decode(as: OpenRequest.self, context: ctx)
     let result = try nnwAPI.openArticle(url: body.url, id: body.id)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-// GET /deeplink
-app.get("deeplink") { req throws -> Response in
-    let url = req.query[String.self, at: "url"]
-    let id = req.query[String.self, at: "id"]
+router.get("deeplink") { req, _ -> Response in
+    let url: String? = req.uri.queryParameters.get("url")
+    let id: String? = req.uri.queryParameters.get("id")
     let result = try nnwAPI.getDeeplink(url: url, id: id)
-    return try responseJSON(["ok": true, "result": result])
+    return try bridgeResponse(["ok": true, "result": result])
 }
 
-let port = Int(Environment.get("NNW_BRIDGE_PORT") ?? "7331") ?? 7331
-app.http.server.configuration.hostname = "0.0.0.0"
-app.http.server.configuration.port = port
-
+let port = Int(ProcessInfo.processInfo.environment["NNW_BRIDGE_PORT"] ?? "7331") ?? 7331
 logger.notice("Listening on http://localhost:\(port)")
-try app.run()
 
+let app = Application(
+    router: router,
+    configuration: .init(address: .hostname("0.0.0.0", port: port))
+)
+try await app.runService()
