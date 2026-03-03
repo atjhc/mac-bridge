@@ -1,41 +1,76 @@
 #!/bin/bash
 set -e
 
-# MacBridge LaunchAgent Uninstallation Script
-# Usage: ./scripts/uninstall.sh
+# Swift Bridge LaunchAgent Uninstallation Script
+# Usage: ./scripts/uninstall.sh [bridge...]
+# Examples:
+#   ./scripts/uninstall.sh                # uninstall all
+#   ./scripts/uninstall.sh calendar       # uninstall one
+#   ./scripts/uninstall.sh mail contacts  # uninstall specific ones
 
 TARGET_DIR="$HOME/Library/LaunchAgents"
-LABEL="com.user.macbridge"
 
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
+RED='\033[0;31m'
 BOLD='\033[1m'
 RESET='\033[0m'
 
-echo -e "${BOLD}MacBridge LaunchAgent Uninstaller${RESET}"
-echo "=================================="
+# Map short names to launchd labels
+resolve_label() {
+    case "$1" in
+        calendar) echo "com.user.calendar-bridge-swift" ;;
+        contacts) echo "com.user.contacts-bridge-swift" ;;
+        mail)     echo "com.user.mail-bridge-swift" ;;
+        things)   echo "com.user.things-bridge-swift" ;;
+        notes)    echo "com.user.notes-bridge-swift" ;;
+        nnw)      echo "com.user.nnw-bridge-swift" ;;
+        *) echo -e "${RED}Unknown bridge: $1${RESET}" >&2; return 1 ;;
+    esac
+}
+
+if [ $# -gt 0 ]; then
+    labels=()
+    for name in "$@"; do
+        labels+=("$(resolve_label "$name")") || exit 1
+    done
+else
+    labels=(
+        "com.user.calendar-bridge-swift"
+        "com.user.contacts-bridge-swift"
+        "com.user.mail-bridge-swift"
+        "com.user.things-bridge-swift"
+        "com.user.notes-bridge-swift"
+        "com.user.nnw-bridge-swift"
+    )
+fi
+
+echo -e "${BOLD}Swift Bridge LaunchAgent Uninstaller${RESET}"
+echo "====================================="
 echo
 
-PLIST="$TARGET_DIR/$LABEL.plist"
+for label in "${labels[@]}"; do
+    plist="$TARGET_DIR/$label.plist"
 
-if [ -f "$PLIST" ]; then
-    echo "Removing $LABEL..."
+    if [ -f "$plist" ]; then
+        echo "Removing $label..."
 
-    echo "  Stopping service..."
-    launchctl stop "$LABEL" 2>/dev/null || true
+        echo "  Stopping service..."
+        launchctl stop "$label" 2>/dev/null || true
 
-    echo "  Unloading service..."
-    launchctl unload "$PLIST" 2>/dev/null || true
+        echo "  Unloading service..."
+        launchctl unload "$plist" 2>/dev/null || true
 
-    echo "  Removing plist..."
-    rm "$PLIST"
+        echo "  Removing plist..."
+        rm "$plist"
 
-    echo -e "  ${GREEN}$LABEL removed${RESET}"
-    echo
-else
-    echo -e "  ${YELLOW}$LABEL not found (already removed?)${RESET}"
-    echo
-fi
+        echo -e "  ${GREEN}$label removed${RESET}"
+        echo
+    else
+        echo -e "  ${YELLOW}$label not found (already removed?)${RESET}"
+        echo
+    fi
+done
 
 echo -e "${GREEN}Uninstallation complete!${RESET}"
 echo
