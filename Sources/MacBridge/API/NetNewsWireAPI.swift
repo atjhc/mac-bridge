@@ -1,3 +1,4 @@
+import BridgeCore
 import Foundation
 import OSLog
 
@@ -5,60 +6,21 @@ private let log = Logger(subsystem: "com.user.mac-bridge", category: "nnw")
 
 class NetNewsWireAPI {
 
-    // MARK: - JXA execution
+    private let bundleId = "com.ranchero.NetNewsWire-Evergreen"
 
-    private func runJXA(_ script: String, timeout: TimeInterval = 30) async throws -> Any? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-l", "JavaScript", "-e", script]
+    // MARK: - Health
 
-        let stdout = Pipe()
-        let stderr = Pipe()
-        proc.standardOutput = stdout
-        proc.standardError = stderr
-
-        let exited = AsyncStream<Void> { cont in
-            proc.terminationHandler = { _ in
-                cont.yield()
-                cont.finish()
-            }
-        }
-        try proc.run()
-
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { for await _ in exited { break } }
-            group.addTask {
-                do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
-                proc.terminate()
-                throw BridgeError.scriptFailed("Script timed out after \(Int(timeout))s")
-            }
-            try await group.next()
-            group.cancelAll()
-        }
-
-        guard proc.terminationStatus == 0 else {
-            let errStr =
-                String(
-                    data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
-                )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw BridgeError.scriptFailed(errStr)
-        }
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        let output =
-            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? ""
-        guard !output.isEmpty else { return nil }
-        return try JSONSerialization.jsonObject(with: Data(output.utf8))
-    }
-
-    private func escapeJSString(_ s: String) -> String {
-        let escaped = s
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r")
-        return "\"\(escaped)\""
+    func healthCheck() -> [String: Any] {
+        let installed = isAppInstalled(bundleIdentifier: bundleId)
+        let running = isAppRunning(bundleIdentifier: bundleId)
+        return buildHealthResult(
+            app: "nnw-bridge",
+            status: installed ? "ok" : "error",
+            details: [
+                "appInstalled": installed,
+                "appRunning": running,
+            ]
+        )
     }
 
     // MARK: - Feeds
@@ -286,5 +248,16 @@ class NetNewsWireAPI {
             """
         return try await runJXA(script) ?? ["ok": false, "error": "Script returned no output"]
     }
-}
 
+    // MARK: - Helpers
+
+    private func escapeJSString(_ s: String) -> String {
+        let escaped =
+            s
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        return "\"\(escaped)\""
+    }
+}

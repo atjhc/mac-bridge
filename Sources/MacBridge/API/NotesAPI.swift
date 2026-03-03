@@ -1,3 +1,4 @@
+import BridgeCore
 import Foundation
 import OSLog
 
@@ -5,60 +6,21 @@ private let log = Logger(subsystem: "com.user.mac-bridge", category: "notes")
 
 class NotesAPI {
 
-    // MARK: - JXA execution
+    private let bundleId = "com.apple.Notes"
 
-    private func runJXA(_ script: String, timeout: TimeInterval = 30) async throws -> Any? {
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-l", "JavaScript", "-e", script]
+    // MARK: - Health
 
-        let stdout = Pipe()
-        let stderr = Pipe()
-        proc.standardOutput = stdout
-        proc.standardError = stderr
-
-        let exited = AsyncStream<Void> { cont in
-            proc.terminationHandler = { _ in
-                cont.yield()
-                cont.finish()
-            }
-        }
-        try proc.run()
-
-        try await withThrowingTaskGroup(of: Void.self) { group in
-            group.addTask { for await _ in exited { break } }
-            group.addTask {
-                do { try await Task.sleep(for: .seconds(timeout)) } catch { return }
-                proc.terminate()
-                throw BridgeError.scriptFailed("Script timed out after \(Int(timeout))s")
-            }
-            try await group.next()
-            group.cancelAll()
-        }
-
-        guard proc.terminationStatus == 0 else {
-            let errStr =
-                String(
-                    data: stderr.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8
-                )?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            throw BridgeError.scriptFailed(errStr)
-        }
-
-        let data = stdout.fileHandleForReading.readDataToEndOfFile()
-        let output =
-            String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
-            ?? ""
-        guard !output.isEmpty else { return nil }
-        return try JSONSerialization.jsonObject(with: Data(output.utf8))
-    }
-
-    private func escapeJSString(_ s: String) -> String {
-        let escaped = s
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-            .replacingOccurrences(of: "\n", with: "\\n")
-            .replacingOccurrences(of: "\r", with: "\\r")
-        return "\"\(escaped)\""
+    func healthCheck() -> [String: Any] {
+        let installed = isAppInstalled(bundleIdentifier: bundleId)
+        let running = isAppRunning(bundleIdentifier: bundleId)
+        return buildHealthResult(
+            app: "notes-bridge",
+            status: installed ? "ok" : "error",
+            details: [
+                "appInstalled": installed,
+                "appRunning": running,
+            ]
+        )
     }
 
     // MARK: - Accounts & Folders
@@ -97,7 +59,9 @@ class NotesAPI {
 
     // MARK: - Notes
 
-    func getNotes(folder: String?, account: String?, search: String?, limit: Int) async throws -> Any {
+    func getNotes(folder: String?, account: String?, search: String?, limit: Int) async throws
+        -> Any
+    {
         let folderFilter = folder.map { escapeJSString($0) } ?? "null"
         let accountFilter = account.map { escapeJSString($0) } ?? "null"
         let searchFilter = search.map { escapeJSString($0.lowercased()) } ?? "null"
@@ -174,7 +138,9 @@ class NotesAPI {
 
     // MARK: - Create
 
-    func createNote(name: String, body: String, folder: String?, account: String?) async throws -> Any {
+    func createNote(name: String, body: String, folder: String?, account: String?) async throws
+        -> Any
+    {
         let folderFilter = folder.map { escapeJSString($0) } ?? "null"
         let accountFilter = account.map { escapeJSString($0) } ?? "null"
         let script = """
@@ -232,43 +198,6 @@ class NotesAPI {
             }
             """
         return try await runJXA(script) ?? ["updated": false]
-    }
-
-    // MARK: - Move
-
-    func moveNotes(ids: [String], folder: String, account: String?) async throws -> Any {
-        let idsJS =
-            try String(data: JSONSerialization.data(withJSONObject: ids), encoding: .utf8) ?? "[]"
-        let accountFilter = account.map { escapeJSString($0) } ?? "null"
-        let script = """
-            const app = Application('Notes');
-            const ids = \(idsJS);
-            const folderName = \(escapeJSString(folder));
-            const accountName = \(accountFilter);
-            let targetFolder = null;
-            if (accountName) {
-              const acct = app.accounts().find(a => a.name() === accountName);
-              if (acct) targetFolder = acct.folders().find(f => f.name() === folderName);
-            } else {
-              targetFolder = app.folders().find(f => f.name() === folderName);
-            }
-            if (!targetFolder) {
-              JSON.stringify({ moved: 0, error: "Folder not found: " + folderName });
-            } else {
-              let moved = 0;
-              for (const id of ids) {
-                try {
-                  const note = app.notes.byId(id);
-                  if (note) {
-                    app.move(note, { to: targetFolder });
-                    moved++;
-                  }
-                } catch {}
-              }
-              JSON.stringify({ moved });
-            }
-            """
-        return try await runJXA(script) ?? ["moved": 0]
     }
 
     // MARK: - Delete
@@ -345,5 +274,16 @@ class NotesAPI {
             """
         return try await runJXA(script) ?? []
     }
-}
 
+    // MARK: - Helpers
+
+    private func escapeJSString(_ s: String) -> String {
+        let escaped =
+            s
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+            .replacingOccurrences(of: "\n", with: "\\n")
+            .replacingOccurrences(of: "\r", with: "\\r")
+        return "\"\(escaped)\""
+    }
+}

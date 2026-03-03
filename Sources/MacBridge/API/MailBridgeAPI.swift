@@ -1,3 +1,4 @@
+import BridgeCore
 import Foundation
 import ScriptingBridge
 
@@ -7,6 +8,20 @@ class MailBridgeAPI {
 
     init() {
         self.mail = SBApplication(bundleIdentifier: "com.apple.mail")
+    }
+
+    // MARK: - Health
+
+    func healthCheck() -> [String: Any] {
+        let running = mail?.isRunning ?? false
+        return buildHealthResult(
+            app: "mail-bridge",
+            status: "ok",
+            details: [
+                "appInstalled": mail != nil,
+                "appRunning": running,
+            ]
+        )
     }
 
     // MARK: - Accounts
@@ -357,9 +372,10 @@ class MailBridgeAPI {
         }
         archiveNames += ["Archive", "All Mail"]
 
-        guard let archiveMailbox = archiveNames.lazy.compactMap({ name in
-            mailboxes.first { ($0.value(forKey: "name") as? String) == name }
-        }).first
+        guard
+            let archiveMailbox = archiveNames.lazy.compactMap({ name in
+                mailboxes.first { ($0.value(forKey: "name") as? String) == name }
+            }).first
         else {
             return (0, "No archive mailbox found for account '\(acctName)'")
         }

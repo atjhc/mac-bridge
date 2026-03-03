@@ -1,3 +1,4 @@
+import BridgeCore
 import Contacts
 import Foundation
 import OSLog
@@ -25,14 +26,14 @@ class ContactsAPI {
         }
     }
 
-    func checkHealth() -> [String: Any] {
-        guard hasAccess else {
-            return [
-                "status": "error", "accessGranted": false,
-                "error": "Contacts access not granted",
-            ]
-        }
-        return ["status": "ok", "accessGranted": true]
+    // MARK: - Health
+
+    func healthCheck() -> [String: Any] {
+        buildHealthResult(
+            app: "contacts-bridge",
+            status: hasAccess ? "ok" : "error",
+            details: ["hasAccess": hasAccess]
+        )
     }
 
     private func ensureAccess() throws {

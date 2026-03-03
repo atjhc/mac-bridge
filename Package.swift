@@ -7,21 +7,42 @@ let package = Package(
         .macOS(.v14)
     ],
     dependencies: [
-        .package(url: "https://github.com/vapor/vapor.git", from: "4.89.0")
+        .package(url: "https://github.com/hummingbird-project/hummingbird.git", from: "2.0.0")
     ],
     targets: [
         .target(
-            name: "BridgeCore",
+            name: "BridgeCore"
+        ),
+        .target(
+            name: "BridgeHTTP",
             dependencies: [
-                .product(name: "Vapor", package: "vapor")
+                "BridgeCore",
+                .product(name: "Hummingbird", package: "hummingbird"),
             ]
         ),
         .executableTarget(
-            name: "MacBridge",
-            dependencies: [
-                .product(name: "Vapor", package: "vapor"),
-                "BridgeCore",
-            ]
+            name: "CalendarBridge",
+            dependencies: ["BridgeHTTP"]
+        ),
+        .executableTarget(
+            name: "ContactsBridge",
+            dependencies: ["BridgeHTTP"]
+        ),
+        .executableTarget(
+            name: "MailBridge",
+            dependencies: ["BridgeHTTP"]
+        ),
+        .executableTarget(
+            name: "ThingsBridge",
+            dependencies: ["BridgeHTTP"]
+        ),
+        .executableTarget(
+            name: "NotesBridge",
+            dependencies: ["BridgeHTTP"]
+        ),
+        .executableTarget(
+            name: "NetNewsWireBridge",
+            dependencies: ["BridgeHTTP"]
         ),
         .testTarget(
             name: "BridgeCoreTests",

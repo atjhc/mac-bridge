@@ -1,3 +1,4 @@
+import BridgeCore
 import EventKit
 import Foundation
 import OSLog
@@ -26,11 +27,14 @@ class CalendarAPI {
         }
     }
 
-    func checkHealth() -> [String: Any] {
-        guard hasAccess else {
-            return ["status": "error", "accessGranted": false, "error": "Calendar access not granted"]
-        }
-        return ["status": "ok", "accessGranted": true]
+    // MARK: - Health
+
+    func healthCheck() -> [String: Any] {
+        buildHealthResult(
+            app: "calendar-bridge",
+            status: hasAccess ? "ok" : "error",
+            details: ["hasAccess": hasAccess]
+        )
     }
 
     private func ensureAccess() throws {
