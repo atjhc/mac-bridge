@@ -1,7 +1,7 @@
 import BridgeCore
 import Vapor
 
-func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI) {
+func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # Mail Bridge API
@@ -268,7 +268,7 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "mail"))
     }
 
     routes.get("accounts") { req -> Response in

@@ -1,7 +1,7 @@
 import BridgeCore
 import Vapor
 
-func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI) {
+func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # Messages Bridge API
@@ -97,7 +97,7 @@ func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "messages"))
     }
 
     routes.get("chats") { req async throws -> Response in

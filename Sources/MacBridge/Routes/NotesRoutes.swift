@@ -1,7 +1,7 @@
 import BridgeCore
 import Vapor
 
-func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI) {
+func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # Notes Bridge API
@@ -199,7 +199,7 @@ func registerNotesRoutes(on routes: RoutesBuilder, api: NotesAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "notes"))
     }
 
     routes.get("accounts") { req async throws -> Response in

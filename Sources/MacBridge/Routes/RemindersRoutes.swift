@@ -1,7 +1,7 @@
 import BridgeCore
 import Vapor
 
-func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI) {
+func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # Reminders Bridge API
@@ -139,7 +139,7 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "reminders"))
     }
 
     routes.get("lists") { req async throws -> Response in

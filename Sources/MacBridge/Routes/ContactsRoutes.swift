@@ -2,7 +2,7 @@ import BridgeCore
 import Contacts
 import Vapor
 
-func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI) {
+func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # Contacts Bridge API
@@ -122,7 +122,7 @@ func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "contacts"))
     }
 
     routes.get("contacts") { req async throws -> Response in

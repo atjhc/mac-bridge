@@ -1,7 +1,7 @@
 import BridgeCore
 import Vapor
 
-func registerShortcutsRoutes(on routes: RoutesBuilder, api: ShortcutsAPI) {
+func registerShortcutsRoutes(on routes: RoutesBuilder, api: ShortcutsAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # Shortcuts Bridge API
@@ -98,7 +98,7 @@ func registerShortcutsRoutes(on routes: RoutesBuilder, api: ShortcutsAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "shortcuts"))
     }
 
     routes.get("shortcuts") { req async throws -> Response in

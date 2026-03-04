@@ -1,7 +1,7 @@
 import BridgeCore
 import Vapor
 
-func registerNetNewsWireRoutes(on routes: RoutesBuilder, api: NetNewsWireAPI) {
+func registerNetNewsWireRoutes(on routes: RoutesBuilder, api: NetNewsWireAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # NetNewsWire Bridge API
@@ -175,7 +175,7 @@ func registerNetNewsWireRoutes(on routes: RoutesBuilder, api: NetNewsWireAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "nnw"))
     }
 
     routes.get("feeds") { req async throws -> Response in

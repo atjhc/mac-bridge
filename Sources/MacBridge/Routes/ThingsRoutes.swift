@@ -1,7 +1,7 @@
 import BridgeCore
 import Vapor
 
-func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI) {
+func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # Things 3 Bridge API
@@ -175,7 +175,7 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "things"))
     }
 
     routes.get("lists") { req async throws -> Response in

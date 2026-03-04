@@ -71,28 +71,32 @@ struct BridgeInfo {
 
 var bridges: [BridgeInfo] = []
 
-func bridgeGroup(_ prefix: String) -> RoutesBuilder {
+func bridgeGroup(_ prefix: String) -> (RoutesBuilder, EndpointPolicy) {
     let policy = config.policy(for: prefix)
-    return app.grouped(PathComponent(stringLiteral: prefix)).grouped(
+    let routes = app.grouped(PathComponent(stringLiteral: prefix)).grouped(
         EndpointFilterMiddleware(policy: policy, prefix: prefix, log: logger))
+    return (routes, policy)
 }
 
 if config.isEnabled("calendar") {
     let calendarAPI = CalendarAPI()
-    registerCalendarRoutes(on: bridgeGroup("calendar"), api: calendarAPI)
+    let (group, policy) = bridgeGroup("calendar")
+    registerCalendarRoutes(on: group, api: calendarAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "calendar", name: "Calendar") { calendarAPI.checkHealth() })
 }
 
 if config.isEnabled("contacts") {
     let contactsAPI = ContactsAPI()
-    registerContactsRoutes(on: bridgeGroup("contacts"), api: contactsAPI)
+    let (group, policy) = bridgeGroup("contacts")
+    registerContactsRoutes(on: group, api: contactsAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "contacts", name: "Contacts") { contactsAPI.checkHealth() })
 }
 
 if config.isEnabled("mail") {
     let mailAPI = MailBridgeAPI()
     mailAPI.archiveMailboxes = config.archiveMailboxes
-    registerMailRoutes(on: bridgeGroup("mail"), api: mailAPI)
+    let (group, policy) = bridgeGroup("mail")
+    registerMailRoutes(on: group, api: mailAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "mail", name: "Mail") {
         buildAppHealthResult(
             "mail-bridge",
@@ -104,7 +108,8 @@ if config.isEnabled("mail") {
 
 if config.isEnabled("things") {
     let thingsAPI = ThingsAPI()
-    registerThingsRoutes(on: bridgeGroup("things"), api: thingsAPI)
+    let (group, policy) = bridgeGroup("things")
+    registerThingsRoutes(on: group, api: thingsAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "things", name: "Things") {
         buildAppHealthResult(
             "things-bridge",
@@ -116,7 +121,8 @@ if config.isEnabled("things") {
 
 if config.isEnabled("notes") {
     let notesAPI = NotesAPI()
-    registerNotesRoutes(on: bridgeGroup("notes"), api: notesAPI)
+    let (group, policy) = bridgeGroup("notes")
+    registerNotesRoutes(on: group, api: notesAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "notes", name: "Notes") {
         buildAppHealthResult(
             "notes-bridge",
@@ -128,7 +134,8 @@ if config.isEnabled("notes") {
 
 if config.isEnabled("nnw") {
     let nnwAPI = NetNewsWireAPI()
-    registerNetNewsWireRoutes(on: bridgeGroup("nnw"), api: nnwAPI)
+    let (group, policy) = bridgeGroup("nnw")
+    registerNetNewsWireRoutes(on: group, api: nnwAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "nnw", name: "NetNewsWire") {
         buildAppHealthResult(
             "nnw-bridge",
@@ -140,7 +147,8 @@ if config.isEnabled("nnw") {
 
 if config.isEnabled("reminders") {
     let remindersAPI = RemindersAPI()
-    registerRemindersRoutes(on: bridgeGroup("reminders"), api: remindersAPI)
+    let (group, policy) = bridgeGroup("reminders")
+    registerRemindersRoutes(on: group, api: remindersAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "reminders", name: "Reminders") {
         buildAppHealthResult(
             "reminders-bridge",
@@ -152,7 +160,8 @@ if config.isEnabled("reminders") {
 
 if config.isEnabled("messages") {
     let messagesAPI = MessagesAPI()
-    registerMessagesRoutes(on: bridgeGroup("messages"), api: messagesAPI)
+    let (group, policy) = bridgeGroup("messages")
+    registerMessagesRoutes(on: group, api: messagesAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "messages", name: "Messages") {
         buildAppHealthResult(
             "messages-bridge",
@@ -164,7 +173,8 @@ if config.isEnabled("messages") {
 
 if config.isEnabled("shortcuts") {
     let shortcutsAPI = ShortcutsAPI()
-    registerShortcutsRoutes(on: bridgeGroup("shortcuts"), api: shortcutsAPI)
+    let (group, policy) = bridgeGroup("shortcuts")
+    registerShortcutsRoutes(on: group, api: shortcutsAPI, policy: policy)
     bridges.append(BridgeInfo(prefix: "shortcuts", name: "Shortcuts") {
         let available = FileManager.default.isExecutableFile(atPath: "/usr/bin/shortcuts")
         return [

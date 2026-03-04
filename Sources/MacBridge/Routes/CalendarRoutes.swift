@@ -2,7 +2,7 @@ import BridgeCore
 import EventKit
 import Vapor
 
-func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI) {
+func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: EndpointPolicy) {
     routes.get("help") { req -> Response in
         let markdown = """
             # Calendar Bridge API
@@ -136,7 +136,7 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI) {
                 ],
             ],
         ]
-        return try responseJSON(schema)
+        return try responseJSON(policy.filterSchema(schema, prefix: "calendar"))
     }
 
     routes.get("calendars") { req async throws -> Response in
