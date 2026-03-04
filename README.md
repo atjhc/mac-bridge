@@ -193,10 +193,6 @@ swift build -c release
 ### Logs
 
 ```bash
-# Startup logs
-tail -f ~/Library/Logs/macbridge.log
-
-# Request logs
 log stream --predicate 'subsystem == "com.user.mac-bridge"' --level info
 ```
 
