@@ -122,5 +122,4 @@ swift build -c release
 ./scripts/stop.sh         # Stop service
 ```
 
-Startup logs: `~/Library/Logs/macbridge.log` (stdout/stderr from launchd)
-Request logs: `log stream --predicate 'subsystem == "com.user.mac-bridge"' --level info`
+Logs: `log stream --predicate 'subsystem == "com.user.mac-bridge"' --level info`

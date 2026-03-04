@@ -17,6 +17,27 @@ app.middleware.use(RateLimitMiddleware(limiter: rateLimiter, log: logger))
 app.middleware.use(LoggingMiddleware(log: logger))
 app.middleware.use(FormatMiddleware())
 
+// --- Endpoint filter middleware ---
+
+struct EndpointFilterMiddleware: AsyncMiddleware {
+    let policy: EndpointPolicy
+    let prefix: String
+    let log: os.Logger
+
+    func respond(to request: Request, chainingTo next: AsyncResponder) async throws -> Response {
+        var path = request.url.path
+        let prefixSlash = "/\(prefix)/"
+        if path.hasPrefix(prefixSlash) {
+            path = String(path.dropFirst(prefixSlash.count))
+        }
+        guard !policy.isBlocked(path: path, method: request.method.string) else {
+            log.warning("Blocked \(request.method) \(request.url.path) by endpoint policy")
+            throw Abort(.forbidden, reason: "Endpoint disabled by policy")
+        }
+        return try await next.respond(to: request)
+    }
+}
+
 // --- Helper for JXA bridge health checks ---
 
 func buildAppHealthResult(
@@ -50,22 +71,28 @@ struct BridgeInfo {
 
 var bridges: [BridgeInfo] = []
 
+func bridgeGroup(_ prefix: String) -> RoutesBuilder {
+    let policy = config.policy(for: prefix)
+    return app.grouped(PathComponent(stringLiteral: prefix)).grouped(
+        EndpointFilterMiddleware(policy: policy, prefix: prefix, log: logger))
+}
+
 if config.isEnabled("calendar") {
     let calendarAPI = CalendarAPI()
-    registerCalendarRoutes(on: app.grouped("calendar"), api: calendarAPI)
+    registerCalendarRoutes(on: bridgeGroup("calendar"), api: calendarAPI)
     bridges.append(BridgeInfo(prefix: "calendar", name: "Calendar") { calendarAPI.checkHealth() })
 }
 
 if config.isEnabled("contacts") {
     let contactsAPI = ContactsAPI()
-    registerContactsRoutes(on: app.grouped("contacts"), api: contactsAPI)
+    registerContactsRoutes(on: bridgeGroup("contacts"), api: contactsAPI)
     bridges.append(BridgeInfo(prefix: "contacts", name: "Contacts") { contactsAPI.checkHealth() })
 }
 
 if config.isEnabled("mail") {
     let mailAPI = MailBridgeAPI()
     mailAPI.archiveMailboxes = config.archiveMailboxes
-    registerMailRoutes(on: app.grouped("mail"), api: mailAPI)
+    registerMailRoutes(on: bridgeGroup("mail"), api: mailAPI)
     bridges.append(BridgeInfo(prefix: "mail", name: "Mail") {
         buildAppHealthResult(
             "mail-bridge",
@@ -77,7 +104,7 @@ if config.isEnabled("mail") {
 
 if config.isEnabled("things") {
     let thingsAPI = ThingsAPI()
-    registerThingsRoutes(on: app.grouped("things"), api: thingsAPI)
+    registerThingsRoutes(on: bridgeGroup("things"), api: thingsAPI)
     bridges.append(BridgeInfo(prefix: "things", name: "Things") {
         buildAppHealthResult(
             "things-bridge",
@@ -89,7 +116,7 @@ if config.isEnabled("things") {
 
 if config.isEnabled("notes") {
     let notesAPI = NotesAPI()
-    registerNotesRoutes(on: app.grouped("notes"), api: notesAPI)
+    registerNotesRoutes(on: bridgeGroup("notes"), api: notesAPI)
     bridges.append(BridgeInfo(prefix: "notes", name: "Notes") {
         buildAppHealthResult(
             "notes-bridge",
@@ -101,7 +128,7 @@ if config.isEnabled("notes") {
 
 if config.isEnabled("nnw") {
     let nnwAPI = NetNewsWireAPI()
-    registerNetNewsWireRoutes(on: app.grouped("nnw"), api: nnwAPI)
+    registerNetNewsWireRoutes(on: bridgeGroup("nnw"), api: nnwAPI)
     bridges.append(BridgeInfo(prefix: "nnw", name: "NetNewsWire") {
         buildAppHealthResult(
             "nnw-bridge",
@@ -113,7 +140,7 @@ if config.isEnabled("nnw") {
 
 if config.isEnabled("reminders") {
     let remindersAPI = RemindersAPI()
-    registerRemindersRoutes(on: app.grouped("reminders"), api: remindersAPI)
+    registerRemindersRoutes(on: bridgeGroup("reminders"), api: remindersAPI)
     bridges.append(BridgeInfo(prefix: "reminders", name: "Reminders") {
         buildAppHealthResult(
             "reminders-bridge",
@@ -125,7 +152,7 @@ if config.isEnabled("reminders") {
 
 if config.isEnabled("messages") {
     let messagesAPI = MessagesAPI()
-    registerMessagesRoutes(on: app.grouped("messages"), api: messagesAPI)
+    registerMessagesRoutes(on: bridgeGroup("messages"), api: messagesAPI)
     bridges.append(BridgeInfo(prefix: "messages", name: "Messages") {
         buildAppHealthResult(
             "messages-bridge",
@@ -137,7 +164,7 @@ if config.isEnabled("messages") {
 
 if config.isEnabled("shortcuts") {
     let shortcutsAPI = ShortcutsAPI()
-    registerShortcutsRoutes(on: app.grouped("shortcuts"), api: shortcutsAPI)
+    registerShortcutsRoutes(on: bridgeGroup("shortcuts"), api: shortcutsAPI)
     bridges.append(BridgeInfo(prefix: "shortcuts", name: "Shortcuts") {
         let available = FileManager.default.isExecutableFile(atPath: "/usr/bin/shortcuts")
         return [
