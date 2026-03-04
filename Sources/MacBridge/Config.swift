@@ -1,3 +1,4 @@
+import BridgeCore
 import Foundation
 import Vapor
 
@@ -6,6 +7,8 @@ struct Config {
     var rateLimit: Int = 10
     var disabled: Set<String> = []
     var archiveMailboxes: [String: String] = [:]
+    var globalReadOnly: Bool = false
+    var bridgePolicies: [String: EndpointPolicy] = [:]
 
     static let filePath: String = {
         FileManager.default.homeDirectoryForCurrentUser
@@ -56,6 +59,7 @@ struct Config {
         if let v = Environment.get("MACBRIDGE_ARCHIVE_MAILBOXES") {
             apply(key: "archive-mailboxes", value: v)
         }
+        if let v = Environment.get("MACBRIDGE_READ_ONLY") { apply(key: "read-only", value: v) }
     }
 
     // MARK: - Key application
@@ -80,12 +84,36 @@ struct Config {
                     String(parts[1]).trimmingCharacters(in: .whitespaces)
             }
             archiveMailboxes = parsed
+        case "read-only":
+            globalReadOnly = value.lowercased() == "true"
         default:
-            break
+            if key.hasSuffix(".read-only") {
+                let bridge = String(key.dropLast(".read-only".count))
+                bridgePolicies[bridge, default: EndpointPolicy()].readOnly =
+                    value.lowercased() == "true"
+            } else if key.hasSuffix(".deny") {
+                let bridge = String(key.dropLast(".deny".count))
+                bridgePolicies[bridge, default: EndpointPolicy()].denied = Set(
+                    value.split(separator: ",").map {
+                        $0.trimmingCharacters(in: .whitespaces)
+                    })
+            } else if key.hasSuffix(".allow") {
+                let bridge = String(key.dropLast(".allow".count))
+                bridgePolicies[bridge, default: EndpointPolicy()].allowed = Set(
+                    value.split(separator: ",").map {
+                        $0.trimmingCharacters(in: .whitespaces)
+                    })
+            }
         }
     }
 
     func isEnabled(_ prefix: String) -> Bool {
         !disabled.contains(prefix)
+    }
+
+    func policy(for bridge: String) -> EndpointPolicy {
+        var policy = bridgePolicies[bridge] ?? EndpointPolicy()
+        if globalReadOnly { policy.readOnly = true }
+        return policy
     }
 }
