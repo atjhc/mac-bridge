@@ -1,11 +1,7 @@
-import Foundation
+import BridgeCore
+import Vapor
 
-enum BridgeError: Error, LocalizedError {
-    case scriptFailed(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .scriptFailed(let msg): return msg
-        }
-    }
+extension BridgeError: AbortError {
+    public var status: HTTPResponseStatus { .internalServerError }
+    public var reason: String { errorDescription ?? "Unknown error" }
 }

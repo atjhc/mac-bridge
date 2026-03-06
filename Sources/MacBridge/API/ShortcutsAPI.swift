@@ -1,3 +1,4 @@
+import BridgeCore
 import Foundation
 import OSLog
 

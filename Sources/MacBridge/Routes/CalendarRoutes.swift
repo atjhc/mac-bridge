@@ -61,7 +61,7 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: 
     }
 
     routes.get("health") { req -> Response in
-        var result = api.checkHealth()
+        var result = api.healthCheck()
         result["app"] = "calendar-bridge"
         return try responseJSON(["ok": true, "result": result])
     }

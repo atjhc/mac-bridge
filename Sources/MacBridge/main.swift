@@ -31,7 +31,7 @@ struct EndpointFilterMiddleware: AsyncMiddleware {
             path = String(path.dropFirst(prefixSlash.count))
         }
         guard !policy.isBlocked(path: path, method: request.method.string) else {
-            log.warning("Blocked \(request.method) \(request.url.path) by endpoint policy")
+            log.warning("Blocked \(request.method.string) \(request.url.path) by endpoint policy")
             throw Abort(.forbidden, reason: "Endpoint disabled by policy")
         }
         return try await next.respond(to: request)
@@ -82,14 +82,14 @@ if config.isEnabled("calendar") {
     let calendarAPI = CalendarAPI()
     let (group, policy) = bridgeGroup("calendar")
     registerCalendarRoutes(on: group, api: calendarAPI, policy: policy)
-    bridges.append(BridgeInfo(prefix: "calendar", name: "Calendar") { calendarAPI.checkHealth() })
+    bridges.append(BridgeInfo(prefix: "calendar", name: "Calendar") { calendarAPI.healthCheck() })
 }
 
 if config.isEnabled("contacts") {
     let contactsAPI = ContactsAPI()
     let (group, policy) = bridgeGroup("contacts")
     registerContactsRoutes(on: group, api: contactsAPI, policy: policy)
-    bridges.append(BridgeInfo(prefix: "contacts", name: "Contacts") { contactsAPI.checkHealth() })
+    bridges.append(BridgeInfo(prefix: "contacts", name: "Contacts") { contactsAPI.healthCheck() })
 }
 
 if config.isEnabled("mail") {
