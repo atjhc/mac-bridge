@@ -5,8 +5,7 @@ import Vapor
 
 let logger = os.Logger(subsystem: "com.user.mac-bridge", category: "macbridge")
 
-let app = try Application(.detect())
-defer { app.shutdown() }
+let app = try await Application.make(.detect())
 
 app.logger.logLevel = .notice
 
@@ -30,8 +29,8 @@ struct EndpointFilterMiddleware: AsyncMiddleware {
         if path.hasPrefix(prefixSlash) {
             path = String(path.dropFirst(prefixSlash.count))
         }
-        guard !policy.isBlocked(path: path, method: request.method.string) else {
-            log.warning("Blocked \(request.method.string) \(request.url.path) by endpoint policy")
+        guard !policy.isBlocked(path: path, method: request.method.rawValue) else {
+            log.warning("Blocked \(request.method.rawValue) \(request.url.path) by endpoint policy")
             throw Abort(.forbidden, reason: "Endpoint disabled by policy")
         }
         return try await next.respond(to: request)
@@ -266,4 +265,5 @@ app.http.server.configuration.hostname = "0.0.0.0"
 app.http.server.configuration.port = config.port
 
 logger.notice("Listening on http://localhost:\(config.port)")
-try app.run()
+try await app.execute()
+try await app.asyncShutdown()

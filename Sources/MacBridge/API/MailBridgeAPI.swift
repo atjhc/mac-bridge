@@ -1,6 +1,9 @@
 import BridgeCore
 import Foundation
+import OSLog
 import ScriptingBridge
+
+private let log = Logger(subsystem: "com.user.mac-bridge", category: "mail-api")
 
 class MailBridgeAPI {
     private let mail: SBApplication?
@@ -401,45 +404,128 @@ class MailBridgeAPI {
         return matched.count
     }
 
-    func composeMessage(to: String, subject: String, body: String, cc: String?) -> (
-        sent: Bool, error: String?
-    ) {
+    func composeMessage(to: String, subject: String, body: String, cc: String?, account: String?)
+        -> (
+            id: String?, error: String?
+        )
+    {
         guard mail != nil else {
-            return (false, "Mail.app not available")
+            return (nil, "Mail.app not available")
+        }
+
+        var props = "subject:\"\(escapeForAppleScript(subject))\", content:\"\(escapeForAppleScript(body))\", visible:false"
+        if let acct = account {
+            props += ", sender:\"\(escapeForAppleScript(acct))\""
         }
 
         var script = """
             tell application "Mail"
-                set newMsg to make new outgoing message with properties {subject: "\(escapeForAppleScript(subject))", content: "\(escapeForAppleScript(body))", visible: false}
+                set newMsg to make new outgoing message with properties {\(props)}
                 tell newMsg
-                    make new to recipient at end of to recipients with properties {address: "\(escapeForAppleScript(to))"}
+                    make new to recipient at end of to recipients with properties {address:"\(escapeForAppleScript(to))"}
             """
 
         if let ccAddr = cc {
             script += """
 
-                        make new cc recipient at end of cc recipients with properties {address: "\(escapeForAppleScript(ccAddr))"}
+                        make new cc recipient at end of cc recipients with properties {address:"\(escapeForAppleScript(ccAddr))"}
                 """
         }
 
         script += """
 
                 end tell
+                save newMsg
+                delay 1
+                set draftMsgs to every message of drafts mailbox whose subject is "\(escapeForAppleScript(subject))"
+                if (count of draftMsgs) > 0 then
+                    return id of item 1 of draftMsgs as string
+                end if
+                return ""
+            end tell
+            """
+
+        log.notice("Composing draft to=\(to) subject=\(subject) account=\(account ?? "default")")
+
+        var error: NSDictionary?
+        guard let scriptObject = NSAppleScript(source: script) else {
+            return (nil, "Failed to create AppleScript")
+        }
+
+        let result = scriptObject.executeAndReturnError(&error)
+        if let err = error {
+            log.error("Compose failed: \(err.description)")
+            return (nil, err.description)
+        }
+
+        let resultStr = result.stringValue ?? ""
+        log.notice("Compose result: id=\(resultStr.isEmpty ? "(none)" : resultStr)")
+
+        guard !resultStr.isEmpty else {
+            return (nil, nil)
+        }
+
+        return (resultStr, nil)
+    }
+
+    func sendDraft(id: String) -> (sent: Bool, error: String?) {
+        guard mail != nil else {
+            return (false, "Mail.app not available")
+        }
+
+        guard let intId = Int(id) else {
+            return (false, "Invalid draft ID — must be the integer id returned by compose")
+        }
+
+        let script = """
+            tell application "Mail"
+                set draftMsgs to every message of drafts mailbox whose id is \(intId)
+                if (count of draftMsgs) is 0 then
+                    return "not_found"
+                end if
+                set draftMsg to item 1 of draftMsgs
+                set msgSubject to subject of draftMsg
+                set msgContent to content of draftMsg
+
+                set newMsg to make new outgoing message with properties {subject:msgSubject, content:msgContent, visible:false}
+
+                repeat with r in (to recipients of draftMsg)
+                    make new to recipient at end of to recipients of newMsg with properties {address:address of r}
+                end repeat
+
+                try
+                    repeat with r in (cc recipients of draftMsg)
+                        make new cc recipient at end of cc recipients of newMsg with properties {address:address of r}
+                    end repeat
+                end try
+
+                try
+                    repeat with r in (bcc recipients of draftMsg)
+                        make new bcc recipient at end of bcc recipients of newMsg with properties {address:address of r}
+                    end repeat
+                end try
+
                 send newMsg
-                return true
+                delete draftMsg
+                return "sent"
             end tell
             """
 
         var error: NSDictionary?
-        if let scriptObject = NSAppleScript(source: script) {
-            scriptObject.executeAndReturnError(&error)
-            if let err = error {
-                return (false, err.description)
-            }
-            return (true, nil)
-        } else {
+        guard let scriptObject = NSAppleScript(source: script) else {
             return (false, "Failed to create AppleScript")
         }
+
+        let result = scriptObject.executeAndReturnError(&error)
+        if let err = error {
+            return (false, err.description)
+        }
+
+        if (result.stringValue ?? "") == "not_found" {
+            return (false, "Draft not found in Drafts mailbox")
+        }
+
+        return (true, nil)
     }
 
     private func escapeForAppleScript(_ str: String) -> String {

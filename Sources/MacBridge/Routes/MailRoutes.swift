@@ -92,11 +92,18 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
             - `account`
 
             ### POST /mail/compose
-            Send a new email via Mail.app.
+            Save a new email to Drafts.
             - `to` (required) — recipient email address
             - `subject` (required)
             - `body` (required) — plain text body
             - `cc` — CC recipient
+            - `account` — sender email address (uses default account if omitted)
+
+            Returns `id` — the draft's integer ID. Use this with `/mail/send` to send it.
+
+            ### POST /mail/send
+            Send a draft email. Finds the draft in the Drafts mailbox, sends it, and removes it from Drafts.
+            - `id` (required) — the draft ID returned by `/mail/compose`
 
             ### GET /mail/health
             Returns bridge status. Use `?format=json` for `{"ok": true, "result": {"status": "ok"}}`.
@@ -253,6 +260,14 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
                             ],
                             ["name": "body", "from": "body", "type": "string", "required": true],
                             ["name": "cc", "from": "body", "type": "string"],
+                            ["name": "account", "from": "body", "type": "string"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/mail/send",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true],
                         ],
                     ],
                     [
@@ -404,11 +419,33 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
             let subject: String
             let body: String
             let cc: String?
+            let account: String?
         }
 
         let body = try req.content.decode(ComposeMessageRequest.self)
         let result = api.composeMessage(
-            to: body.to, subject: body.subject, body: body.body, cc: body.cc)
+            to: body.to, subject: body.subject, body: body.body, cc: body.cc,
+            account: body.account)
+
+        if let error = result.error {
+            return try responseJSON(["ok": false, "error": error])
+        }
+
+        var response: [String: Any] = ["drafted": true]
+        if let id = result.id {
+            response["id"] = id
+        }
+
+        return try responseJSON(["ok": true, "result": response])
+    }
+
+    routes.post("send") { req async throws -> Response in
+        struct SendDraftRequest: Content {
+            let id: String
+        }
+
+        let body = try req.content.decode(SendDraftRequest.self)
+        let result = api.sendDraft(id: body.id)
 
         if let error = result.error {
             return try responseJSON(["ok": false, "error": error])
