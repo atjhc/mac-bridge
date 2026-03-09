@@ -6,11 +6,18 @@ import ScriptingBridge
 private let log = Logger(subsystem: "com.user.mac-bridge", category: "mail-api")
 
 class MailBridgeAPI {
+    private static let bundleID = "com.apple.mail"
     private let mail: SBApplication?
     var archiveMailboxes: [String: String] = [:]
 
     init() {
-        self.mail = SBApplication(bundleIdentifier: "com.apple.mail")
+        self.mail = SBApplication(bundleIdentifier: Self.bundleID)
+    }
+
+    @discardableResult
+    private func ensureRunning() -> Bool {
+        guard mail != nil else { return false }
+        return ensureAppRunning(bundleIdentifier: Self.bundleID)
     }
 
     // MARK: - Health
@@ -30,6 +37,7 @@ class MailBridgeAPI {
     // MARK: - Accounts
 
     func getAccounts() -> [[String: Any]] {
+        ensureRunning()
         guard let app = mail,
             let accounts = app.value(forKey: "accounts") as? [SBObject]
         else {
@@ -95,6 +103,7 @@ class MailBridgeAPI {
     // MARK: - Messages
 
     private func findContainer(mailbox: String?, account: String?) -> SBObject? {
+        ensureRunning()
         if (mailbox == nil || mailbox == "INBOX") && account == nil {
             guard let app = mail,
                 let inbox = app.value(forKey: "inbox") as? SBObject
@@ -404,7 +413,7 @@ class MailBridgeAPI {
         return matched.count
     }
 
-    func composeMessage(to: String, subject: String, body: String, cc: String?, account: String?)
+    func composeMessage(to: String?, subject: String, body: String, cc: String?, account: String?)
         -> (
             id: String?, error: String?
         )
@@ -412,6 +421,7 @@ class MailBridgeAPI {
         guard mail != nil else {
             return (nil, "Mail.app not available")
         }
+        ensureRunning()
 
         var props = "subject:\"\(escapeForAppleScript(subject))\", content:\"\(escapeForAppleScript(body))\", visible:false"
         if let acct = account {
@@ -421,31 +431,49 @@ class MailBridgeAPI {
         var script = """
             tell application "Mail"
                 set newMsg to make new outgoing message with properties {\(props)}
-                tell newMsg
-                    make new to recipient at end of to recipients with properties {address:"\(escapeForAppleScript(to))"}
             """
 
-        if let ccAddr = cc {
+        if to != nil || cc != nil {
             script += """
 
+                    tell newMsg
+                """
+
+            if let toAddr = to {
+                script += """
+
+                        make new to recipient at end of to recipients with properties {address:"\(escapeForAppleScript(toAddr))"}
+                    """
+            }
+
+            if let ccAddr = cc {
+                script += """
+
                         make new cc recipient at end of cc recipients with properties {address:"\(escapeForAppleScript(ccAddr))"}
+                    """
+            }
+
+            script += """
+
+                    end tell
                 """
         }
 
         script += """
 
-                end tell
                 save newMsg
-                delay 1
-                set draftMsgs to every message of drafts mailbox whose subject is "\(escapeForAppleScript(subject))"
-                if (count of draftMsgs) > 0 then
-                    return id of item 1 of draftMsgs as string
-                end if
+                repeat 20 times
+                    set draftMsgs to every message of drafts mailbox whose subject is "\(escapeForAppleScript(subject))"
+                    if (count of draftMsgs) > 0 then
+                        return id of item 1 of draftMsgs as string
+                    end if
+                    delay 0.5
+                end repeat
                 return ""
             end tell
             """
 
-        log.notice("Composing draft to=\(to) subject=\(subject) account=\(account ?? "default")")
+        log.notice("Composing draft to=\(to ?? "(none)") subject=\(subject) account=\(account ?? "default")")
 
         var error: NSDictionary?
         guard let scriptObject = NSAppleScript(source: script) else {
@@ -472,6 +500,7 @@ class MailBridgeAPI {
         guard mail != nil else {
             return (false, "Mail.app not available")
         }
+        ensureRunning()
 
         guard let intId = Int(id) else {
             return (false, "Invalid draft ID — must be the integer id returned by compose")

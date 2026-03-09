@@ -6,7 +6,7 @@ PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 IDENTITY="Heimdall"
 BINARY="$PROJECT_DIR/.build/release/MacBridge"
 
-swift build -c release
+swift build -c release --product MacBridge
 
 # Unlock keychain if needed (prompts for password over SSH)
 if ! codesign --force --sign "$IDENTITY" --identifier "com.user.macbridge" "$BINARY" 2>/dev/null; then

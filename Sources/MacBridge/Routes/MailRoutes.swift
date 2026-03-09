@@ -93,11 +93,11 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
 
             ### POST /mail/compose
             Save a new email to Drafts.
-            - `to` (required) — recipient email address
+            - `to` — recipient email address (optional, can be added later)
             - `subject` (required)
             - `body` (required) — plain text body
             - `cc` — CC recipient
-            - `account` — sender email address (uses default account if omitted)
+            - `account` — sender email address, e.g. `user@icloud.com` (NOT the account name like "iCloud"). Uses default account if omitted. See `GET /mail/accounts` for available addresses.
 
             Returns `id` — the draft's integer ID. Use this with `/mail/send` to send it.
 
@@ -253,14 +253,18 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
                         "method": "POST",
                         "path": "/mail/compose",
                         "params": [
-                            ["name": "to", "from": "body", "type": "string", "required": true],
+                            ["name": "to", "from": "body", "type": "string"],
                             [
                                 "name": "subject", "from": "body", "type": "string",
                                 "required": true,
                             ],
                             ["name": "body", "from": "body", "type": "string", "required": true],
                             ["name": "cc", "from": "body", "type": "string"],
-                            ["name": "account", "from": "body", "type": "string"],
+                            [
+                                "name": "account", "from": "body", "type": "string",
+                                "description":
+                                    "Sender email address (e.g. user@icloud.com), not account name. See GET /accounts for addresses.",
+                            ],
                         ],
                     ],
                     [
@@ -415,7 +419,7 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
 
     routes.post("compose") { req async throws -> Response in
         struct ComposeMessageRequest: Content {
-            let to: String
+            let to: String?
             let subject: String
             let body: String
             let cc: String?

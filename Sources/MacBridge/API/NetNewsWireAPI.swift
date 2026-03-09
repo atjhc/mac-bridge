@@ -8,6 +8,13 @@ class NetNewsWireAPI {
 
     private let bundleId = "com.ranchero.NetNewsWire-Evergreen"
 
+    private func launchAndRunJXA(_ script: String, timeout: TimeInterval = 30) async throws
+        -> Any?
+    {
+        ensureAppRunning(bundleIdentifier: bundleId)
+        return try await BridgeCore.runJXA(script, timeout: timeout)
+    }
+
     // MARK: - Health
 
     func healthCheck() -> [String: Any] {
@@ -39,7 +46,7 @@ class NetNewsWireAPI {
             }
             JSON.stringify(results);
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     // MARK: - Articles
@@ -84,7 +91,7 @@ class NetNewsWireAPI {
             }
             JSON.stringify(results);
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     func getArticle(id: String) async throws -> Any? {
@@ -117,7 +124,7 @@ class NetNewsWireAPI {
             }
             JSON.stringify(found);
             """
-        return try await runJXA(script)
+        return try await launchAndRunJXA(script)
     }
 
     // MARK: - Current Article
@@ -145,7 +152,7 @@ class NetNewsWireAPI {
               });
             }
             """
-        return try await runJXA(script)
+        return try await launchAndRunJXA(script)
     }
 
     // MARK: - Read/Starred
@@ -168,7 +175,7 @@ class NetNewsWireAPI {
             }
             JSON.stringify({ updated });
             """
-        return try await runJXA(script) ?? ["updated": 0]
+        return try await launchAndRunJXA(script) ?? ["updated": 0]
     }
 
     func setStarredStatus(ids: [String], starred: Bool) async throws -> Any {
@@ -189,7 +196,7 @@ class NetNewsWireAPI {
             }
             JSON.stringify({ updated });
             """
-        return try await runJXA(script) ?? ["updated": 0]
+        return try await launchAndRunJXA(script) ?? ["updated": 0]
     }
 
     // MARK: - Open & Deeplink
@@ -218,7 +225,7 @@ class NetNewsWireAPI {
               JSON.stringify({ ok: true, url: targetUrl });
             }
             """
-        return try await runJXA(script) ?? ["ok": false, "error": "Script returned no output"]
+        return try await launchAndRunJXA(script) ?? ["ok": false, "error": "Script returned no output"]
     }
 
     func getDeeplink(url: String?, id: String?) async throws -> Any {
@@ -246,7 +253,7 @@ class NetNewsWireAPI {
               JSON.stringify({ ok: true, deeplink: deepLink, url: targetUrl });
             }
             """
-        return try await runJXA(script) ?? ["ok": false, "error": "Script returned no output"]
+        return try await launchAndRunJXA(script) ?? ["ok": false, "error": "Script returned no output"]
     }
 
     // MARK: - Helpers

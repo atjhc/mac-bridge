@@ -8,6 +8,13 @@ class NotesAPI {
 
     private let bundleId = "com.apple.Notes"
 
+    private func launchAndRunJXA(_ script: String, timeout: TimeInterval = 30) async throws
+        -> Any?
+    {
+        ensureAppRunning(bundleIdentifier: bundleId)
+        return try await BridgeCore.runJXA(script, timeout: timeout)
+    }
+
     // MARK: - Health
 
     func healthCheck() -> [String: Any] {
@@ -33,7 +40,7 @@ class NotesAPI {
               name: acct.name(),
             })));
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     func getFolders(account: String?) async throws -> Any {
@@ -54,7 +61,7 @@ class NotesAPI {
               shared: (() => { try { return f.shared(); } catch { return false; } })(),
             })));
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     // MARK: - Notes
@@ -104,7 +111,7 @@ class NotesAPI {
             }
             JSON.stringify(results);
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     func getNote(id: String) async throws -> Any? {
@@ -133,7 +140,7 @@ class NotesAPI {
             } catch {}
             JSON.stringify(found);
             """
-        return try await runJXA(script)
+        return try await launchAndRunJXA(script)
     }
 
     // MARK: - Create
@@ -171,7 +178,7 @@ class NotesAPI {
               JSON.stringify({ id: null });
             }
             """
-        return try await runJXA(script) ?? ["id": NSNull()]
+        return try await launchAndRunJXA(script) ?? ["id": NSNull()]
     }
 
     // MARK: - Update
@@ -197,7 +204,7 @@ class NotesAPI {
               JSON.stringify({ updated: false, error: String(e) });
             }
             """
-        return try await runJXA(script) ?? ["updated": false]
+        return try await launchAndRunJXA(script) ?? ["updated": false]
     }
 
     // MARK: - Move
@@ -232,7 +239,7 @@ class NotesAPI {
               JSON.stringify({ moved });
             }
             """
-        return try await runJXA(script) ?? ["moved": 0]
+        return try await launchAndRunJXA(script) ?? ["moved": 0]
     }
 
     // MARK: - Delete
@@ -252,7 +259,7 @@ class NotesAPI {
             }
             JSON.stringify({ deleted });
             """
-        return try await runJXA(script) ?? ["deleted": 0]
+        return try await launchAndRunJXA(script) ?? ["deleted": 0]
     }
 
     // MARK: - Show
@@ -273,7 +280,7 @@ class NotesAPI {
               JSON.stringify({ shown: false, error: String(e) });
             }
             """
-        return try await runJXA(script) ?? ["shown": false]
+        return try await launchAndRunJXA(script) ?? ["shown": false]
     }
 
     // MARK: - Search
@@ -307,7 +314,7 @@ class NotesAPI {
             }
             JSON.stringify(results);
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     // MARK: - Helpers

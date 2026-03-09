@@ -8,6 +8,13 @@ class ThingsAPI {
 
     private let bundleId = "com.culturedcode.ThingsMac"
 
+    private func launchAndRunJXA(_ script: String, timeout: TimeInterval = 30) async throws
+        -> Any?
+    {
+        ensureAppRunning(bundleIdentifier: bundleId)
+        return try await BridgeCore.runJXA(script, timeout: timeout)
+    }
+
     // MARK: - Health
 
     func healthCheck() -> [String: Any] {
@@ -30,7 +37,7 @@ class ThingsAPI {
             const app = Application('Things3');
             JSON.stringify(app.lists().map(l => ({ id: l.id(), name: l.name() })));
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     func getAreas() async throws -> Any {
@@ -38,7 +45,7 @@ class ThingsAPI {
             const app = Application('Things3');
             JSON.stringify(app.areas().map(a => ({ id: a.id(), name: a.name() })));
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     // MARK: - Projects
@@ -60,7 +67,7 @@ class ThingsAPI {
               area: (() => { try { const a = pr.area(); return a ? { id: a.id(), name: a.name() } : null; } catch { return null; } })(),
             })));
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     // MARK: - Todos
@@ -108,7 +115,7 @@ class ThingsAPI {
             }
             JSON.stringify(results);
             """
-        return try await runJXA(script) ?? []
+        return try await launchAndRunJXA(script) ?? []
     }
 
     func getTodo(id: String) async throws -> Any? {
@@ -136,7 +143,7 @@ class ThingsAPI {
               });
             }
             """
-        return try await runJXA(script)
+        return try await launchAndRunJXA(script)
     }
 
     // MARK: - Create (AppleScript — JXA `make` fails with -2710)
@@ -168,6 +175,7 @@ class ThingsAPI {
               return "{" & quote & "id" & quote & ":" & quote & theId & quote & "}"
             end tell
             """
+        ensureAppRunning(bundleIdentifier: bundleId)
         return try await runAppleScript(script) ?? ["id": NSNull()]
     }
 
@@ -216,7 +224,7 @@ class ThingsAPI {
             }
             JSON.stringify({ updated, newRecurringInstances });
             """
-        return try await runJXA(script) ?? ["updated": 0]
+        return try await launchAndRunJXA(script) ?? ["updated": 0]
     }
 
     // MARK: - Delete
@@ -236,7 +244,7 @@ class ThingsAPI {
             }
             JSON.stringify({ deleted });
             """
-        return try await runJXA(script) ?? ["deleted": 0]
+        return try await launchAndRunJXA(script) ?? ["deleted": 0]
     }
 
     // MARK: - Helpers

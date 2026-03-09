@@ -6,9 +6,17 @@ private let log = Logger(subsystem: "com.user.mac-bridge", category: "reminders"
 
 class RemindersAPI {
 
+    private let bundleId = "com.apple.reminders"
+
+    @discardableResult
+    private func ensureRunning() -> Bool {
+        ensureAppRunning(bundleIdentifier: bundleId)
+    }
+
     // MARK: - JXA execution
 
     private func runJXA(_ script: String, timeout: TimeInterval = 30) async throws -> Any? {
+        ensureAppRunning(bundleIdentifier: bundleId)
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
         proc.arguments = ["-l", "JavaScript", "-e", script]
