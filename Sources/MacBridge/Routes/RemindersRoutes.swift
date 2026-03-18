@@ -24,6 +24,7 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI, policy
             - `listId` — filter by list
             - `completed` — filter by completion status (true/false)
             - `limit` (default: 50, max: 200)
+            - `offset` (default: 0) — skip this many reminders for pagination
 
             Returns: `id`, `name`, `completed`, `priority`, `flagged`, `body`, `dueDate`, `remindMeDate`, `listId`, `listName`
 
@@ -40,6 +41,21 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI, policy
             - `remindMeDate` — ISO date-time string
             - `priority` — integer (0=none, 1=high, 5=medium, 9=low)
             - `flagged` — boolean
+
+            ### POST /reminders/reminders/update
+            Update an existing reminder. Only provided fields are changed.
+            - `id` (required)
+            - `name`, `notes`, `dueDate`, `remindMeDate` (ISO date strings)
+            - `priority` (0=none, 1=high, 5=medium, 9=low)
+            - `flagged` (boolean)
+
+            ### POST /reminders/lists
+            Create a new reminder list.
+            - `name` (required)
+
+            ### POST /reminders/lists/delete
+            Delete a reminder list.
+            - `id` (required)
 
             ### POST /reminders/reminders/complete
             Mark reminders as complete or incomplete.
@@ -86,6 +102,7 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI, policy
                             ["name": "listId", "from": "query", "type": "string"],
                             ["name": "completed", "from": "query", "type": "boolean"],
                             ["name": "limit", "from": "query", "type": "number", "default": 50],
+                            ["name": "offset", "from": "query", "type": "number", "default": 0],
                         ],
                     ],
                     [
@@ -106,6 +123,33 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI, policy
                             ["name": "remindMeDate", "from": "body", "type": "string"],
                             ["name": "priority", "from": "body", "type": "number"],
                             ["name": "flagged", "from": "body", "type": "boolean"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/reminders/reminders/update",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true],
+                            ["name": "name", "from": "body", "type": "string"],
+                            ["name": "notes", "from": "body", "type": "string"],
+                            ["name": "dueDate", "from": "body", "type": "string"],
+                            ["name": "remindMeDate", "from": "body", "type": "string"],
+                            ["name": "priority", "from": "body", "type": "number"],
+                            ["name": "flagged", "from": "body", "type": "boolean"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/reminders/lists",
+                        "params": [
+                            ["name": "name", "from": "body", "type": "string", "required": true]
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/reminders/lists/delete",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true]
                         ],
                     ],
                     [
@@ -156,8 +200,10 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI, policy
             completed = nil
         }
         let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
+        let offset = max(req.query[Int.self, at: "offset"] ?? 0, 0)
 
-        let reminders = try await api.getReminders(listId: listId, completed: completed, limit: limit)
+        let reminders = try await api.getReminders(
+            listId: listId, completed: completed, limit: limit, offset: offset)
         return try responseJSON(["ok": true, "result": reminders])
     }
 
@@ -185,6 +231,39 @@ func registerRemindersRoutes(on routes: RoutesBuilder, api: RemindersAPI, policy
             name: body.name, notes: body.notes, listId: body.listId,
             dueDate: body.dueDate, remindMeDate: body.remindMeDate,
             priority: body.priority, flagged: body.flagged)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("reminders", "update") { req async throws -> Response in
+        struct UpdateReminderRequest: Content {
+            let id: String
+            let name: String?
+            let notes: String?
+            let dueDate: String?
+            let remindMeDate: String?
+            let priority: Int?
+            let flagged: Bool?
+        }
+
+        let body = try req.content.decode(UpdateReminderRequest.self)
+        let result = try await api.updateReminder(
+            id: body.id, name: body.name, notes: body.notes,
+            dueDate: body.dueDate, remindMeDate: body.remindMeDate,
+            priority: body.priority, flagged: body.flagged)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("lists") { req async throws -> Response in
+        struct CreateListRequest: Content { let name: String }
+        let body = try req.content.decode(CreateListRequest.self)
+        let result = try await api.createList(name: body.name)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("lists", "delete") { req async throws -> Response in
+        struct DeleteListRequest: Content { let id: String }
+        let body = try req.content.decode(DeleteListRequest.self)
+        let result = try await api.deleteList(id: body.id)
         return try responseJSON(["ok": true, "result": result])
     }
 

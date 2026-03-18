@@ -64,5 +64,6 @@ public func runOsascript(_ arguments: [String], timeout: TimeInterval = 30) asyn
     let output =
         String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
     guard !output.isEmpty else { return nil }
-    return try JSONSerialization.jsonObject(with: Data(output.utf8))
+    return try JSONSerialization.jsonObject(
+        with: Data(output.utf8), options: .fragmentsAllowed)
 }

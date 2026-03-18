@@ -23,6 +23,7 @@ func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI, policy: 
             List contacts. Returns a summary for each contact.
             - `search` — filter by name (uses Apple's built-in name matching)
             - `limit` (default: 100)
+            - `offset` (default: 0) — skip this many contacts for pagination
 
             Returns: `id`, `name`, `firstName`, `lastName`, `organization`, `jobTitle`, `emails` (array of {label, value}), `phones` (array of {label, value})
 
@@ -42,13 +43,23 @@ func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI, policy: 
             ### POST /contacts/contacts
             Create a new contact.
             - `firstName` (required)
-            - `lastName`
-            - `organization`
-            - `jobTitle`
+            - `lastName`, `middleName`, `nickname`
+            - `organization`, `department`, `jobTitle`
             - `email` — added with "work" label
             - `phone` — added with "mobile" label
+            - `birthday` — YYYY-MM-DD format
+            - `note`
 
             Returns: `{"id": "..."}` with the new contact's identifier.
+
+            ### POST /contacts/contacts/update
+            Update an existing contact. Only provided fields are changed.
+            - `id` (required)
+            - Same fields as create (all optional)
+
+            ### POST /contacts/contacts/delete
+            Delete contacts by ID.
+            - `ids` (required) — array of contact identifier strings
 
             ### GET /contacts/health
             Returns bridge status. Use `?format=json` for `{"ok": true, "result": {"status": "ok"}}`.
@@ -77,6 +88,7 @@ func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI, policy: 
                         "params": [
                             ["name": "search", "from": "query", "type": "string"],
                             ["name": "limit", "from": "query", "type": "number", "default": 100],
+                            ["name": "offset", "from": "query", "type": "number", "default": 0],
                         ],
                     ],
                     [
@@ -103,10 +115,40 @@ func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI, policy: 
                                 "required": true,
                             ],
                             ["name": "lastName", "from": "body", "type": "string"],
+                            ["name": "middleName", "from": "body", "type": "string"],
+                            ["name": "nickname", "from": "body", "type": "string"],
                             ["name": "organization", "from": "body", "type": "string"],
+                            ["name": "department", "from": "body", "type": "string"],
                             ["name": "jobTitle", "from": "body", "type": "string"],
                             ["name": "email", "from": "body", "type": "string"],
                             ["name": "phone", "from": "body", "type": "string"],
+                            ["name": "birthday", "from": "body", "type": "string"],
+                            ["name": "note", "from": "body", "type": "string"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/contacts/contacts/update",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true],
+                            ["name": "firstName", "from": "body", "type": "string"],
+                            ["name": "lastName", "from": "body", "type": "string"],
+                            ["name": "middleName", "from": "body", "type": "string"],
+                            ["name": "nickname", "from": "body", "type": "string"],
+                            ["name": "organization", "from": "body", "type": "string"],
+                            ["name": "department", "from": "body", "type": "string"],
+                            ["name": "jobTitle", "from": "body", "type": "string"],
+                            ["name": "email", "from": "body", "type": "string"],
+                            ["name": "phone", "from": "body", "type": "string"],
+                            ["name": "birthday", "from": "body", "type": "string"],
+                            ["name": "note", "from": "body", "type": "string"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/contacts/contacts/delete",
+                        "params": [
+                            ["name": "ids", "from": "body", "type": "string[]", "required": true]
                         ],
                     ],
                     [
@@ -128,8 +170,9 @@ func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI, policy: 
     routes.get("contacts") { req async throws -> Response in
         let search = req.query[String.self, at: "search"]
         let limit = req.query[Int.self, at: "limit"] ?? 100
+        let offset = max(req.query[Int.self, at: "offset"] ?? 0, 0)
 
-        let contacts = try await api.getContacts(search: search, limit: limit)
+        let contacts = try await api.getContacts(search: search, limit: limit, offset: offset)
         return try responseJSON(["ok": true, "result": contacts])
     }
 
@@ -158,10 +201,15 @@ func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI, policy: 
         struct CreateContactRequest: Content {
             let firstName: String
             let lastName: String?
+            let middleName: String?
+            let nickname: String?
             let organization: String?
+            let department: String?
             let jobTitle: String?
             let email: String?
             let phone: String?
+            let birthday: String?
+            let note: String?
         }
 
         let body = try req.content.decode(CreateContactRequest.self)
@@ -169,12 +217,61 @@ func registerContactsRoutes(on routes: RoutesBuilder, api: ContactsAPI, policy: 
         let contactId = try await api.createContact(
             firstName: body.firstName,
             lastName: body.lastName,
+            middleName: body.middleName,
+            nickname: body.nickname,
             organization: body.organization,
+            department: body.department,
             jobTitle: body.jobTitle,
             email: body.email,
-            phone: body.phone
+            phone: body.phone,
+            birthday: body.birthday,
+            note: body.note
         )
 
         return try responseJSON(["ok": true, "result": ["id": contactId]])
+    }
+
+    routes.post("contacts", "update") { req async throws -> Response in
+        struct UpdateContactRequest: Content {
+            let id: String
+            let firstName: String?
+            let lastName: String?
+            let middleName: String?
+            let nickname: String?
+            let organization: String?
+            let department: String?
+            let jobTitle: String?
+            let email: String?
+            let phone: String?
+            let birthday: String?
+            let note: String?
+        }
+
+        let body = try req.content.decode(UpdateContactRequest.self)
+        let result = try await api.updateContact(
+            id: body.id,
+            firstName: body.firstName,
+            lastName: body.lastName,
+            middleName: body.middleName,
+            nickname: body.nickname,
+            organization: body.organization,
+            department: body.department,
+            jobTitle: body.jobTitle,
+            email: body.email,
+            phone: body.phone,
+            birthday: body.birthday,
+            note: body.note
+        )
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("contacts", "delete") { req async throws -> Response in
+        struct DeleteContactsRequest: Content {
+            let ids: [String]
+        }
+
+        let body = try req.content.decode(DeleteContactsRequest.self)
+        let deleted = try await api.deleteContacts(ids: body.ids)
+        return try responseJSON(["ok": true, "result": ["deleted": deleted]])
     }
 }

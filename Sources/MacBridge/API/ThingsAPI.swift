@@ -1,3 +1,4 @@
+import AppKit
 import BridgeCore
 import Foundation
 import OSLog
@@ -72,9 +73,10 @@ class ThingsAPI {
 
     // MARK: - Todos
 
-    func getTodos(listId: String?, areaId: String?, projectId: String?, status: String, limit: Int)
-        async throws -> Any
-    {
+    func getTodos(
+        listId: String?, areaId: String?, projectId: String?, status: String, limit: Int,
+        offset: Int
+    ) async throws -> Any {
         let todoSource: String
         if let listId {
             todoSource = "todos = app.lists.byId(\(escapeJSString(listId))).toDos();"
@@ -93,11 +95,15 @@ class ThingsAPI {
             }
             const targetStatus = \(escapeJSString(status));
             const limit = \(limit);
+            const offset = \(offset);
             let todos;
             \(todoSource)
             const results = [];
+            let matched = 0;
             for (const todo of todos) {
               if (targetStatus !== "any" && todo.status() !== targetStatus) continue;
+              matched++;
+              if (matched <= offset) continue;
               const project = (() => { try { const pr = todo.project(); return pr ? { id: pr.id(), name: pr.name() } : null; } catch { return null; } })();
               const area = (() => { try { const a = todo.area(); return a ? { id: a.id(), name: a.name() } : null; } catch { return null; } })();
               results.push({
@@ -177,6 +183,69 @@ class ThingsAPI {
             """
         ensureAppRunning(bundleIdentifier: bundleId)
         return try await runAppleScript(script) ?? ["id": NSNull()]
+    }
+
+    // MARK: - Update
+
+    func updateTodo(id: String, name: String?, notes: String?, dueDate: String?, tags: String?)
+        async throws -> Any
+    {
+        var setLines: [String] = []
+        if let name { setLines.append("todo.name = \(escapeJSString(name));") }
+        if let notes { setLines.append("todo.notes = \(escapeJSString(notes));") }
+        if let tags { setLines.append("todo.tagNames = \(escapeJSString(tags));") }
+        if let dueDate {
+            setLines.append("todo.dueDate = new Date(\(escapeJSString(dueDate)));")
+        }
+
+        let script = """
+            const app = Application('Things3');
+            try {
+              const todo = app.toDos.byId(\(escapeJSString(id)));
+              \(setLines.joined(separator: "\n      "))
+              JSON.stringify({ updated: true });
+            } catch (e) {
+              JSON.stringify({ updated: false, error: String(e) });
+            }
+            """
+        return try await launchAndRunJXA(script) ?? ["updated": false]
+    }
+
+    // MARK: - Create Project
+
+    func createProject(name: String, notes: String?, areaId: String?) async throws -> Any {
+        var props = ["name: \(escapeASString(name))"]
+        if let notes { props.append("notes: \(escapeASString(notes))") }
+
+        var moveCmd = ""
+        if let areaId {
+            moveCmd = "move newProj to area id \(escapeASString(areaId))"
+        }
+
+        let script = """
+            tell application "Things3"
+              set newProj to make new project with properties {\(props.joined(separator: ", "))}
+              \(moveCmd)
+              set theId to id of newProj
+              return "{" & quote & "id" & quote & ":" & quote & theId & quote & "}"
+            end tell
+            """
+        ensureAppRunning(bundleIdentifier: bundleId)
+        return try await runAppleScript(script) ?? ["id": NSNull()]
+    }
+
+    // MARK: - Create Heading
+
+    func createHeading(projectId: String, title: String) async throws -> Any {
+        // Things headings are only creatable via URL scheme
+        let encoded = title.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? title
+        let urlStr = "things:///update-project?id=\(projectId)&prepend-heading=\(encoded)"
+        guard let url = URL(string: urlStr) else {
+            return ["created": false, "error": "Invalid URL"]
+        }
+        ensureAppRunning(bundleIdentifier: bundleId)
+        NSWorkspace.shared.open(url)
+        return ["created": true]
     }
 
     // MARK: - Status

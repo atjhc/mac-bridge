@@ -44,7 +44,7 @@ class ContactsAPI {
         }
     }
 
-    func getContacts(search: String?, limit: Int) async throws -> [[String: Any]] {
+    func getContacts(search: String?, limit: Int, offset: Int) async throws -> [[String: Any]] {
         try ensureAccess()
 
         let keysToFetch: [CNKeyDescriptor] = [
@@ -59,6 +59,7 @@ class ContactsAPI {
         ]
 
         var contacts: [CNContact] = []
+        let needed = limit + offset
 
         if let searchTerm = search, !searchTerm.isEmpty {
             let predicate = CNContact.predicateForContacts(matchingName: searchTerm)
@@ -67,13 +68,13 @@ class ContactsAPI {
             let request = CNContactFetchRequest(keysToFetch: keysToFetch)
             try store.enumerateContacts(with: request) { contact, stop in
                 contacts.append(contact)
-                if contacts.count >= limit {
+                if contacts.count >= needed {
                     stop.pointee = true
                 }
             }
         }
 
-        return contacts.prefix(limit).map { contactToDict($0) }
+        return Array(contacts.dropFirst(offset).prefix(limit).map { contactToDict($0) })
     }
 
     func getContact(id: String) async throws -> [String: Any]? {
@@ -146,39 +147,126 @@ class ContactsAPI {
     }
 
     func createContact(
-        firstName: String, lastName: String?, organization: String?,
-        jobTitle: String?, email: String?, phone: String?
+        firstName: String, lastName: String?, middleName: String?,
+        nickname: String?, organization: String?, department: String?,
+        jobTitle: String?, email: String?, phone: String?,
+        birthday: String?, note: String?
     ) async throws -> String {
         try ensureAccess()
 
         let contact = CNMutableContact()
         contact.givenName = firstName
-        if let lastName = lastName {
-            contact.familyName = lastName
+        if let lastName { contact.familyName = lastName }
+        if let middleName { contact.middleName = middleName }
+        if let nickname { contact.nickname = nickname }
+        if let organization { contact.organizationName = organization }
+        if let department { contact.departmentName = department }
+        if let jobTitle { contact.jobTitle = jobTitle }
+        if let note { contact.note = note }
+        if let email {
+            contact.emailAddresses = [
+                CNLabeledValue(label: CNLabelWork, value: email as NSString)
+            ]
         }
-        if let organization = organization {
-            contact.organizationName = organization
+        if let phone {
+            contact.phoneNumbers = [
+                CNLabeledValue(
+                    label: CNLabelPhoneNumberMobile,
+                    value: CNPhoneNumber(stringValue: phone))
+            ]
         }
-        if let jobTitle = jobTitle {
-            contact.jobTitle = jobTitle
-        }
-        if let email = email {
-            let emailValue = CNLabeledValue(
-                label: CNLabelWork, value: email as NSString)
-            contact.emailAddresses = [emailValue]
-        }
-        if let phone = phone {
-            let phoneValue = CNLabeledValue(
-                label: CNLabelPhoneNumberMobile,
-                value: CNPhoneNumber(stringValue: phone))
-            contact.phoneNumbers = [phoneValue]
-        }
+        if let birthday { contact.birthday = parseBirthday(birthday) }
 
         let saveRequest = CNSaveRequest()
         saveRequest.add(contact, toContainerWithIdentifier: nil)
         try store.execute(saveRequest)
 
         return contact.identifier
+    }
+
+    func updateContact(
+        id: String, firstName: String?, lastName: String?, middleName: String?,
+        nickname: String?, organization: String?, department: String?,
+        jobTitle: String?, email: String?, phone: String?,
+        birthday: String?, note: String?
+    ) async throws -> [String: Any] {
+        try ensureAccess()
+
+        let keysToFetch: [CNKeyDescriptor] = [
+            CNContactIdentifierKey as CNKeyDescriptor,
+            CNContactGivenNameKey as CNKeyDescriptor,
+            CNContactFamilyNameKey as CNKeyDescriptor,
+            CNContactMiddleNameKey as CNKeyDescriptor,
+            CNContactNicknameKey as CNKeyDescriptor,
+            CNContactOrganizationNameKey as CNKeyDescriptor,
+            CNContactDepartmentNameKey as CNKeyDescriptor,
+            CNContactJobTitleKey as CNKeyDescriptor,
+            CNContactEmailAddressesKey as CNKeyDescriptor,
+            CNContactPhoneNumbersKey as CNKeyDescriptor,
+            CNContactBirthdayKey as CNKeyDescriptor,
+            CNContactNoteKey as CNKeyDescriptor,
+        ]
+
+        let contact = try store.unifiedContact(withIdentifier: id, keysToFetch: keysToFetch)
+        let mutable = contact.mutableCopy() as! CNMutableContact
+
+        if let firstName { mutable.givenName = firstName }
+        if let lastName { mutable.familyName = lastName }
+        if let middleName { mutable.middleName = middleName }
+        if let nickname { mutable.nickname = nickname }
+        if let organization { mutable.organizationName = organization }
+        if let department { mutable.departmentName = department }
+        if let jobTitle { mutable.jobTitle = jobTitle }
+        if let note { mutable.note = note }
+        if let email {
+            mutable.emailAddresses = [
+                CNLabeledValue(label: CNLabelWork, value: email as NSString)
+            ]
+        }
+        if let phone {
+            mutable.phoneNumbers = [
+                CNLabeledValue(
+                    label: CNLabelPhoneNumberMobile,
+                    value: CNPhoneNumber(stringValue: phone))
+            ]
+        }
+        if let birthday { mutable.birthday = parseBirthday(birthday) }
+
+        let saveRequest = CNSaveRequest()
+        saveRequest.update(mutable)
+        try store.execute(saveRequest)
+        return ["updated": true]
+    }
+
+    func deleteContacts(ids: [String]) async throws -> Int {
+        try ensureAccess()
+
+        let keysToFetch: [CNKeyDescriptor] = [CNContactIdentifierKey as CNKeyDescriptor]
+        var deleted = 0
+        for id in ids {
+            do {
+                let contact = try store.unifiedContact(
+                    withIdentifier: id, keysToFetch: keysToFetch)
+                let mutable = contact.mutableCopy() as! CNMutableContact
+                let saveRequest = CNSaveRequest()
+                saveRequest.delete(mutable)
+                try store.execute(saveRequest)
+                deleted += 1
+            } catch {
+                log.error("Failed to delete contact \(id): \(error)")
+            }
+        }
+        return deleted
+    }
+
+    private func parseBirthday(_ str: String) -> DateComponents? {
+        let parts = str.split(separator: "-")
+        guard parts.count == 3,
+            let year = Int(parts[0]),
+            let month = Int(parts[1]),
+            let day = Int(parts[2])
+        else { return nil }
+        return DateComponents(year: year, month: month, day: day)
     }
 
     private func contactToDict(_ contact: CNContact, fullDetails: Bool = false) -> [String: Any] {

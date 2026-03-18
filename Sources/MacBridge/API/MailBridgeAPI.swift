@@ -113,6 +113,23 @@ class MailBridgeAPI {
             return inbox
         }
 
+        let systemMailboxKey: String? = switch mailbox {
+        case "Drafts": "draftsMailbox"
+        case "Sent": "sentMailbox"
+        case "Trash": "trashMailbox"
+        case "Junk": "junkMailbox"
+        default: nil
+        }
+
+        if let key = systemMailboxKey {
+            guard let app = mail,
+                let box = app.value(forKey: key) as? SBObject
+            else {
+                return nil
+            }
+            return box
+        }
+
         guard let app = mail,
             let accounts = app.value(forKey: "accounts") as? [SBObject]
         else {
@@ -133,7 +150,7 @@ class MailBridgeAPI {
             for mb in mailboxes {
                 guard let mbName = mb.value(forKey: "name") as? String else { continue }
 
-                if mbName == mailbox || mbName == "INBOX" {
+                if mbName == mailbox || (mailbox == nil && mbName == "INBOX") {
                     return mb
                 }
             }
@@ -496,6 +513,86 @@ class MailBridgeAPI {
         return (resultStr, nil)
     }
 
+    func updateDraft(id: String, to: String?, subject: String?, body: String?, cc: String?, account: String?)
+        -> (id: String?, error: String?)
+    {
+        guard mail != nil else {
+            return (nil, "Mail.app not available")
+        }
+        ensureRunning()
+
+        guard let intId = Int(id) else {
+            return (nil, "Invalid draft ID — must be the integer id returned by compose")
+        }
+
+        // Read existing draft fields via AppleScript
+        let readScript = """
+            tell application "Mail"
+                set draftMsgs to every message of drafts mailbox whose id is \(intId)
+                if (count of draftMsgs) is 0 then
+                    return "not_found"
+                end if
+                set draftMsg to item 1 of draftMsgs
+                set msgSubject to subject of draftMsg
+                set msgContent to content of draftMsg
+                set msgSender to sender of draftMsg
+                set toAddrs to {}
+                repeat with r in (to recipients of draftMsg)
+                    set end of toAddrs to address of r
+                end repeat
+                set ccAddrs to {}
+                try
+                    repeat with r in (cc recipients of draftMsg)
+                        set end of ccAddrs to address of r
+                    end repeat
+                end try
+                set toStr to ""
+                repeat with a in toAddrs
+                    if toStr is not "" then set toStr to toStr & ","
+                    set toStr to toStr & a
+                end repeat
+                set ccStr to ""
+                repeat with a in ccAddrs
+                    if ccStr is not "" then set ccStr to ccStr & ","
+                    set ccStr to ccStr & a
+                end repeat
+                delete draftMsg
+                return msgSubject & "\\n" & msgSender & "\\n" & toStr & "\\n" & ccStr & "\\n" & msgContent
+            end tell
+            """
+
+        var error: NSDictionary?
+        guard let readObj = NSAppleScript(source: readScript) else {
+            return (nil, "Failed to create AppleScript")
+        }
+
+        let readResult = readObj.executeAndReturnError(&error)
+        if let err = error {
+            return (nil, err.description)
+        }
+
+        let raw = readResult.stringValue ?? ""
+        if raw == "not_found" {
+            return (nil, "Draft not found in Drafts mailbox")
+        }
+
+        // Parse: subject\nsender\nto\ncc\nbody (body may contain newlines)
+        let lines = raw.split(separator: "\n", maxSplits: 4, omittingEmptySubsequences: false)
+        let oldSubject = lines.count > 0 ? String(lines[0]) : ""
+        let oldSender = lines.count > 1 ? String(lines[1]) : ""
+        let oldTo = lines.count > 2 ? String(lines[2]) : ""
+        let oldCc = lines.count > 3 ? String(lines[3]) : ""
+        let oldBody = lines.count > 4 ? String(lines[4]) : ""
+
+        let newTo = to ?? (oldTo.isEmpty ? nil : oldTo)
+        let newSubject = subject ?? oldSubject
+        let newBody = body ?? oldBody
+        let newCc = cc ?? (oldCc.isEmpty ? nil : oldCc)
+        let newAccount = account ?? (oldSender.isEmpty ? nil : oldSender)
+
+        return composeMessage(to: newTo, subject: newSubject, body: newBody, cc: newCc, account: newAccount)
+    }
+
     func sendDraft(id: String) -> (sent: Bool, error: String?) {
         guard mail != nil else {
             return (false, "Mail.app not available")
@@ -555,6 +652,123 @@ class MailBridgeAPI {
         }
 
         return (true, nil)
+    }
+
+    // MARK: - Reply & Forward
+
+    func replyToMessage(id: String, mailbox: String?, account: String?, body: String, replyAll: Bool)
+        -> (id: String?, error: String?)
+    {
+        guard mail != nil else { return (nil, "Mail.app not available") }
+        ensureRunning()
+
+        let container = mailbox ?? "inbox"
+
+        let script = """
+            tell application "Mail"
+                set targetMsg to missing value
+                repeat with acct in every account
+                    try
+                        set targetBox to mailbox "\(escapeForAppleScript(container))" of acct
+                        set msgs to (every message of targetBox whose id is \(escapeForAppleScript(id)))
+                        if (count of msgs) > 0 then
+                            set targetMsg to item 1 of msgs
+                            exit repeat
+                        end if
+                    end try
+                end repeat
+                if targetMsg is missing value then return "{\\"error\\":\\"Message not found\\"}"
+                set replyMsg to \(replyAll ? "reply targetMsg with reply to all" : "reply targetMsg")
+                set content of replyMsg to "\(escapeForAppleScript(body))" & content of replyMsg
+                save replyMsg
+                repeat 20 times
+                    set draftMsgs to every message of drafts mailbox whose subject starts with "Re:"
+                    if (count of draftMsgs) > 0 then
+                        return "{\\"id\\":\\"" & (id of item 1 of draftMsgs as string) & "\\"}"
+                    end if
+                    delay 0.5
+                end repeat
+                return "{\\"id\\":null}"
+            end tell
+            """
+        do {
+            let result = try syncRunAppleScript(script)
+            if let data = result?.data(using: .utf8),
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            {
+                if let error = json["error"] as? String { return (nil, error) }
+                return (json["id"] as? String, nil)
+            }
+            return (nil, "Unexpected result")
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+
+    func forwardMessage(
+        id: String, mailbox: String?, account: String?, to: String, body: String?
+    ) -> (id: String?, error: String?) {
+        guard mail != nil else { return (nil, "Mail.app not available") }
+        ensureRunning()
+
+        let container = mailbox ?? "inbox"
+        let bodyContent = body.map { escapeForAppleScript($0) } ?? ""
+
+        let script = """
+            tell application "Mail"
+                set targetMsg to missing value
+                repeat with acct in every account
+                    try
+                        set targetBox to mailbox "\(escapeForAppleScript(container))" of acct
+                        set msgs to (every message of targetBox whose id is \(escapeForAppleScript(id)))
+                        if (count of msgs) > 0 then
+                            set targetMsg to item 1 of msgs
+                            exit repeat
+                        end if
+                    end try
+                end repeat
+                if targetMsg is missing value then return "{\\"error\\":\\"Message not found\\"}"
+                set fwdMsg to forward targetMsg
+                tell fwdMsg
+                    make new to recipient at end of to recipients with properties {address:"\(escapeForAppleScript(to))"}
+                    set content to "\(bodyContent)" & content
+                end tell
+                save fwdMsg
+                repeat 20 times
+                    set draftMsgs to every message of drafts mailbox whose subject starts with "Fwd:"
+                    if (count of draftMsgs) > 0 then
+                        return "{\\"id\\":\\"" & (id of item 1 of draftMsgs as string) & "\\"}"
+                    end if
+                    delay 0.5
+                end repeat
+                return "{\\"id\\":null}"
+            end tell
+            """
+        do {
+            let result = try syncRunAppleScript(script)
+            if let data = result?.data(using: .utf8),
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            {
+                if let error = json["error"] as? String { return (nil, error) }
+                return (json["id"] as? String, nil)
+            }
+            return (nil, "Unexpected result")
+        } catch {
+            return (nil, error.localizedDescription)
+        }
+    }
+
+    private func syncRunAppleScript(_ script: String) throws -> String? {
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", script]
+        let stdout = Pipe()
+        proc.standardOutput = stdout
+        proc.standardError = Pipe()
+        try proc.run()
+        proc.waitUntilExit()
+        let data = stdout.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func escapeForAppleScript(_ str: String) -> String {

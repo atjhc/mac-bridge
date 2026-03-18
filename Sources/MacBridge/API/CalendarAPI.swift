@@ -59,7 +59,8 @@ class CalendarAPI {
     }
 
     func getEvents(
-        calendarName: String?, from: Date, to: Date, limit: Int, statusFilter: String? = nil
+        calendarName: String?, from: Date, to: Date, limit: Int, offset: Int,
+        statusFilter: String? = nil
     ) async throws -> [[String: Any]] {
         try ensureAccess()
 
@@ -93,7 +94,7 @@ class CalendarAPI {
             }
         }
 
-        return Array(events.prefix(limit).map(eventToDict))
+        return Array(events.dropFirst(offset).prefix(limit).map(eventToDict))
     }
 
     func getEvent(id: String) async throws -> [String: Any]? {
@@ -145,6 +146,130 @@ class CalendarAPI {
         try eventStore.save(event, span: .thisEvent)
 
         return event.eventIdentifier
+    }
+
+    func updateEvent(
+        id: String, title: String?, startDate: Date?, endDate: Date?, location: String?,
+        notes: String?, isAllDay: Bool?, calendarName: String?, span: String?
+    ) async throws -> [String: Any] {
+        try ensureAccess()
+
+        guard let event = eventStore.event(withIdentifier: id) else {
+            throw NSError(
+                domain: "CalendarBridge", code: 404,
+                userInfo: [NSLocalizedDescriptionKey: "Event not found"])
+        }
+
+        if let title { event.title = title }
+        if let startDate { event.startDate = startDate }
+        if let endDate { event.endDate = endDate }
+        if let location { event.location = location }
+        if let notes { event.notes = notes }
+        if let isAllDay { event.isAllDay = isAllDay }
+
+        if let calendarName {
+            guard
+                let cal = eventStore.calendars(for: .event).first(where: {
+                    $0.title == calendarName
+                })
+            else {
+                throw NSError(
+                    domain: "CalendarBridge", code: 404,
+                    userInfo: [NSLocalizedDescriptionKey: "Calendar '\(calendarName)' not found"])
+            }
+            event.calendar = cal
+        }
+
+        let ekSpan: EKSpan = span == "future" ? .futureEvents : .thisEvent
+        try eventStore.save(event, span: ekSpan)
+        return ["updated": true, "id": event.eventIdentifier as Any]
+    }
+
+    func setRecurrence(
+        eventId: String, frequency: String, interval: Int, endDate: Date?, count: Int?
+    ) async throws -> [String: Any] {
+        try ensureAccess()
+
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            throw NSError(
+                domain: "CalendarBridge", code: 404,
+                userInfo: [NSLocalizedDescriptionKey: "Event not found"])
+        }
+
+        let freq: EKRecurrenceFrequency
+        switch frequency.lowercased() {
+        case "daily": freq = .daily
+        case "weekly": freq = .weekly
+        case "monthly": freq = .monthly
+        case "yearly": freq = .yearly
+        default:
+            throw NSError(
+                domain: "CalendarBridge", code: 400,
+                userInfo: [
+                    NSLocalizedDescriptionKey:
+                        "Invalid frequency. Use: daily, weekly, monthly, yearly"
+                ])
+        }
+
+        let end: EKRecurrenceEnd?
+        if let endDate {
+            end = EKRecurrenceEnd(end: endDate)
+        } else if let count {
+            end = EKRecurrenceEnd(occurrenceCount: count)
+        } else {
+            end = nil
+        }
+
+        let rule = EKRecurrenceRule(
+            recurrenceWith: freq, interval: interval, end: end)
+        event.recurrenceRules = [rule]
+        try eventStore.save(event, span: .futureEvents)
+        return ["set": true]
+    }
+
+    func removeRecurrence(eventId: String) async throws -> [String: Any] {
+        try ensureAccess()
+
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            throw NSError(
+                domain: "CalendarBridge", code: 404,
+                userInfo: [NSLocalizedDescriptionKey: "Event not found"])
+        }
+
+        event.recurrenceRules = nil
+        try eventStore.save(event, span: .futureEvents)
+        return ["removed": true]
+    }
+
+    func addAlarm(eventId: String, offset: TimeInterval) async throws -> [String: Any] {
+        try ensureAccess()
+
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            throw NSError(
+                domain: "CalendarBridge", code: 404,
+                userInfo: [NSLocalizedDescriptionKey: "Event not found"])
+        }
+
+        let alarm = EKAlarm(relativeOffset: offset)
+        event.addAlarm(alarm)
+        try eventStore.save(event, span: .thisEvent)
+        return ["added": true]
+    }
+
+    func removeAlarms(eventId: String) async throws -> [String: Any] {
+        try ensureAccess()
+
+        guard let event = eventStore.event(withIdentifier: eventId) else {
+            throw NSError(
+                domain: "CalendarBridge", code: 404,
+                userInfo: [NSLocalizedDescriptionKey: "Event not found"])
+        }
+
+        if let alarms = event.alarms {
+            for alarm in alarms { event.removeAlarm(alarm) }
+        }
+        try eventStore.save(event, span: .thisEvent)
+        return ["removed": true]
     }
 
     func deleteEvents(ids: [String]) async throws -> Int {
@@ -225,6 +350,44 @@ class CalendarAPI {
             }
         }
 
+        var alarmsArray: [[String: Any]] = []
+        if let alarms = event.alarms {
+            for alarm in alarms {
+                var a: [String: Any] = ["offset": alarm.relativeOffset]
+                if let absoluteDate = alarm.absoluteDate {
+                    a["absoluteDate"] = iso8601.string(from: absoluteDate)
+                }
+                alarmsArray.append(a)
+            }
+        }
+
+        var recurrenceArray: [[String: Any]] = []
+        if let rules = event.recurrenceRules {
+            for rule in rules {
+                let freqStr: String
+                switch rule.frequency {
+                case .daily: freqStr = "daily"
+                case .weekly: freqStr = "weekly"
+                case .monthly: freqStr = "monthly"
+                case .yearly: freqStr = "yearly"
+                @unknown default: freqStr = "unknown"
+                }
+                var r: [String: Any] = [
+                    "frequency": freqStr,
+                    "interval": rule.interval,
+                ]
+                if let end = rule.recurrenceEnd {
+                    if let endDate = end.endDate {
+                        r["endDate"] = iso8601.string(from: endDate)
+                    }
+                    if end.occurrenceCount > 0 {
+                        r["occurrenceCount"] = end.occurrenceCount
+                    }
+                }
+                recurrenceArray.append(r)
+            }
+        }
+
         return [
             "id": event.eventIdentifier as Any,
             "summary": event.title ?? "",
@@ -241,6 +404,9 @@ class CalendarAPI {
             "hasAttendees": event.hasAttendees,
             "organizer": event.organizer?.name ?? NSNull(),
             "url": event.url?.absoluteString ?? NSNull(),
+            "alarms": alarmsArray,
+            "recurrenceRules": recurrenceArray,
+            "hasRecurrenceRules": event.hasRecurrenceRules,
         ]
     }
 

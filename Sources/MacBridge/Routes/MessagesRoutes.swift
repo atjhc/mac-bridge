@@ -14,7 +14,7 @@ func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI, policy: 
 
             Messages must be running for this bridge to work.
 
-            **Note:** The Messages scripting interface does not provide access to message content or history. You can list chats, see participants, and send new messages.
+            Messages must be running for chat listing and sending. Message history is read directly from the Messages database and requires Full Disk Access.
 
             ## Endpoints
 
@@ -24,6 +24,15 @@ func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI, policy: 
             ### GET /messages/chat
             Get a single chat with participant details.
             - `id` (required)
+
+            ### GET /messages/messages
+            Get message transcript for a chat. Reads from the Messages SQLite database.
+            - `chatId` (required) — chat ID (from /chats) or phone number/email
+            - `limit` (default: 50, max: 200)
+            - `offset` (default: 0) — skip this many messages for pagination
+            - `before` — ISO 8601 date; only return messages before this time
+
+            Returns messages in chronological order: `guid`, `text`, `isFromMe`, `date`, `service`, `sender`. Tapbacks include `reactionType` and `reactionTo`.
 
             ### GET /messages/participants
             List all known participants across chats. Returns `id`, `name`, `handle`, `fullName`.
@@ -72,6 +81,19 @@ func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI, policy: 
                     ],
                     [
                         "method": "GET",
+                        "path": "/messages/messages",
+                        "params": [
+                            [
+                                "name": "chatId", "from": "query", "type": "string",
+                                "required": true,
+                            ],
+                            ["name": "limit", "from": "query", "type": "number", "default": 50],
+                            ["name": "offset", "from": "query", "type": "number", "default": 0],
+                            ["name": "before", "from": "query", "type": "string"],
+                        ],
+                    ],
+                    [
+                        "method": "GET",
                         "path": "/messages/participants",
                         "params": [] as [[String: Any]],
                     ],
@@ -111,6 +133,20 @@ func registerMessagesRoutes(on routes: RoutesBuilder, api: MessagesAPI, policy: 
         }
         let chat = try await api.getChat(id: id)
         return try responseJSON(["ok": true, "result": chat as Any])
+    }
+
+    routes.get("messages") { req async throws -> Response in
+        guard let chatId = req.query[String.self, at: "chatId"] else {
+            throw Abort(.badRequest, reason: "'chatId' parameter is required")
+        }
+        let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
+        let offset = max(req.query[Int.self, at: "offset"] ?? 0, 0)
+        let before = req.query[String.self, at: "before"]
+            .flatMap { ISO8601DateFormatter().date(from: $0) }
+
+        let result = try await api.getMessages(
+            chatId: chatId, limit: limit, offset: offset, before: before)
+        return try responseJSON(["ok": true, "result": result])
     }
 
     routes.get("participants") { req async throws -> Response in

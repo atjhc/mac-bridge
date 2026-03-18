@@ -29,6 +29,7 @@ func registerNetNewsWireRoutes(on routes: RoutesBuilder, api: NetNewsWireAPI, po
             - `starred` (default: false) — only starred articles
             - `feedId` — filter to a specific feed
             - `limit` (default: 50, max: 200)
+            - `offset` (default: 0) — skip this many articles for pagination
             - `content` (default: false) — include plain-text body (slower)
 
             Returns: `id`, `title`, `url`, `summary`, `feedName`, `feedId`, `publishedDate`, `arrivedDate`, `read`, `starred`, and optionally `contents`
@@ -109,6 +110,7 @@ func registerNetNewsWireRoutes(on routes: RoutesBuilder, api: NetNewsWireAPI, po
                             ],
                             ["name": "feedId", "from": "query", "type": "string"],
                             ["name": "limit", "from": "query", "type": "number", "default": 50],
+                            ["name": "offset", "from": "query", "type": "number", "default": 0],
                             [
                                 "name": "content", "from": "query", "type": "boolean",
                                 "default": false,
@@ -188,10 +190,12 @@ func registerNetNewsWireRoutes(on routes: RoutesBuilder, api: NetNewsWireAPI, po
         let starred = req.query[Bool.self, at: "starred"] ?? false
         let feedId = req.query[String.self, at: "feedId"]
         let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
+        let offset = max(req.query[Int.self, at: "offset"] ?? 0, 0)
         let content = req.query[Bool.self, at: "content"] ?? false
 
         let articles = try await api.getArticles(
-            unread: unread, starred: starred, feedId: feedId, limit: limit, includeContent: content)
+            unread: unread, starred: starred, feedId: feedId, limit: limit, offset: offset,
+            includeContent: content)
         return try responseJSON(["ok": true, "result": articles])
     }
 

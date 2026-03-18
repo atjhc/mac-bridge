@@ -73,7 +73,8 @@ class RemindersAPI {
 
     // MARK: - Reminders
 
-    func getReminders(listId: String?, completed: Bool?, limit: Int) async throws -> Any {
+    func getReminders(listId: String?, completed: Bool?, limit: Int, offset: Int) async throws -> Any
+    {
         let listFilter: String
         if let listId {
             listFilter = "const lists = [app.lists.byId(\(escapeJSString(listId)))];"
@@ -95,10 +96,14 @@ class RemindersAPI {
             }
             \(listFilter)
             const results = [];
+            const offset = \(offset);
+            let matched = 0;
             for (const list of lists) {
               const reminders = list.reminders();
               for (const r of reminders) {
                 \(completedFilter)
+                matched++;
+                if (matched <= offset) continue;
                 results.push({
                   id: r.id(),
                   name: r.name(),
@@ -221,6 +226,69 @@ class RemindersAPI {
             JSON.stringify({updated});
             """
         return try await runJXA(script) ?? ["updated": 0]
+    }
+
+    // MARK: - Update
+
+    func updateReminder(
+        id: String, name: String?, notes: String?, dueDate: String?,
+        remindMeDate: String?, priority: Int?, flagged: Bool?
+    ) async throws -> Any {
+        var setLines: [String] = []
+        if let name { setLines.append("r.name = \(escapeJSString(name));") }
+        if let notes { setLines.append("r.body = \(escapeJSString(notes));") }
+        if let priority { setLines.append("r.priority = \(priority);") }
+        if let flagged { setLines.append("r.flagged = \(flagged);") }
+        if let dueDate { setLines.append("r.dueDate = new Date(\(escapeJSString(dueDate)));") }
+        if let remindMeDate {
+            setLines.append("r.remindMeDate = new Date(\(escapeJSString(remindMeDate)));")
+        }
+
+        let script = """
+            const app = Application('Reminders');
+            const ids = [\(escapeJSString(id))];
+            let updated = false;
+            const lists = app.lists();
+            for (const list of lists) {
+              const matches = list.reminders.whose({id: ids[0]})();
+              if (matches.length > 0) {
+                const r = matches[0];
+                \(setLines.joined(separator: "\n        "))
+                updated = true;
+                break;
+              }
+            }
+            JSON.stringify({ updated });
+            """
+        return try await runJXA(script) ?? ["updated": false]
+    }
+
+    // MARK: - List Management
+
+    func createList(name: String) async throws -> Any {
+        let script = """
+            const app = Application('Reminders');
+            const list = app.List({ name: \(escapeJSString(name)) });
+            app.lists.push(list);
+            delay(0.5);
+            const found = app.lists().find(l => l.name() === \(escapeJSString(name)));
+            JSON.stringify({ id: found ? found.id() : null, name: \(escapeJSString(name)) });
+            """
+        return try await runJXA(script) ?? ["id": NSNull()]
+    }
+
+    func deleteList(id: String) async throws -> Any {
+        let script = """
+            const app = Application('Reminders');
+            try {
+              const list = app.lists.byId(\(escapeJSString(id)));
+              app.delete(list);
+              JSON.stringify({ deleted: true });
+            } catch (e) {
+              JSON.stringify({ deleted: false, error: String(e) });
+            }
+            """
+        return try await runJXA(script) ?? ["deleted": false]
     }
 
     // MARK: - Delete

@@ -43,6 +43,7 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI, policy: Endp
             - `projectId` — filter by project
             - `status` (default: "open") — filter by status, or "any" for all
             - `limit` (default: 50, max: 200)
+            - `offset` (default: 0) — skip this many todos for pagination
 
             Returns: `id`, `name`, `notes`, `status`, `dueDate`, `activationDate`, `tags`, `project` ({id, name} or null), `area` ({id, name} or null)
 
@@ -59,6 +60,22 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI, policy: Endp
             - `projectId` — move to this project after creation
 
             Returns: `{"id": "..."}` with the new todo's identifier.
+
+            ### POST /things/todos/update
+            Update a todo's properties. Only provided fields are changed.
+            - `id` (required)
+            - `name`, `notes`, `dueDate` (ISO date), `tags` (comma-separated)
+
+            ### POST /things/projects
+            Create a new project.
+            - `name` (required)
+            - `notes`
+            - `areaId` — move to this area after creation
+
+            ### POST /things/headings
+            Create a heading in a project (via Things URL scheme).
+            - `projectId` (required)
+            - `title` (required)
 
             ### POST /things/todos/status
             Set status on one or more todos.
@@ -124,6 +141,7 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI, policy: Endp
                                 "default": "open",
                             ],
                             ["name": "limit", "from": "query", "type": "number", "default": 50],
+                            ["name": "offset", "from": "query", "type": "number", "default": 0],
                         ],
                     ],
                     [
@@ -142,6 +160,37 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI, policy: Endp
                             ["name": "dueDate", "from": "body", "type": "string"],
                             ["name": "listId", "from": "body", "type": "string"],
                             ["name": "projectId", "from": "body", "type": "string"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/things/todos/update",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true],
+                            ["name": "name", "from": "body", "type": "string"],
+                            ["name": "notes", "from": "body", "type": "string"],
+                            ["name": "dueDate", "from": "body", "type": "string"],
+                            ["name": "tags", "from": "body", "type": "string"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/things/projects",
+                        "params": [
+                            ["name": "name", "from": "body", "type": "string", "required": true],
+                            ["name": "notes", "from": "body", "type": "string"],
+                            ["name": "areaId", "from": "body", "type": "string"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/things/headings",
+                        "params": [
+                            [
+                                "name": "projectId", "from": "body", "type": "string",
+                                "required": true,
+                            ],
+                            ["name": "title", "from": "body", "type": "string", "required": true],
                         ],
                     ],
                     [
@@ -200,10 +249,11 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI, policy: Endp
         let projectId = req.query[String.self, at: "projectId"]
         let status = req.query[String.self, at: "status"] ?? "open"
         let limit = min(req.query[Int.self, at: "limit"] ?? 50, 200)
+        let offset = max(req.query[Int.self, at: "offset"] ?? 0, 0)
 
         let todos = try await api.getTodos(
             listId: listId, areaId: areaId, projectId: projectId,
-            status: status, limit: limit)
+            status: status, limit: limit, offset: offset)
         return try responseJSON(["ok": true, "result": todos])
     }
 
@@ -228,6 +278,47 @@ func registerThingsRoutes(on routes: RoutesBuilder, api: ThingsAPI, policy: Endp
         let result = try await api.createTodo(
             name: body.name, notes: body.notes, dueDate: body.dueDate,
             listId: body.listId, projectId: body.projectId)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("todos", "update") { req async throws -> Response in
+        struct UpdateTodoRequest: Content {
+            let id: String
+            let name: String?
+            let notes: String?
+            let dueDate: String?
+            let tags: String?
+        }
+
+        let body = try req.content.decode(UpdateTodoRequest.self)
+        let result = try await api.updateTodo(
+            id: body.id, name: body.name, notes: body.notes,
+            dueDate: body.dueDate, tags: body.tags)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("projects") { req async throws -> Response in
+        struct CreateProjectRequest: Content {
+            let name: String
+            let notes: String?
+            let areaId: String?
+        }
+
+        let body = try req.content.decode(CreateProjectRequest.self)
+        let result = try await api.createProject(
+            name: body.name, notes: body.notes, areaId: body.areaId)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("headings") { req async throws -> Response in
+        struct CreateHeadingRequest: Content {
+            let projectId: String
+            let title: String
+        }
+
+        let body = try req.content.decode(CreateHeadingRequest.self)
+        let result = try await api.createHeading(
+            projectId: body.projectId, title: body.title)
         return try responseJSON(["ok": true, "result": result])
     }
 

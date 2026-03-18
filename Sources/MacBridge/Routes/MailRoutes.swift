@@ -101,6 +101,37 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
 
             Returns `id` — the draft's integer ID. Use this with `/mail/send` to send it.
 
+            ### POST /mail/compose/update
+            Update an existing draft. Replaces the draft with a new one carrying the updated fields. Fields not provided are preserved from the original draft.
+            - `id` (required) — the draft ID to update
+            - `to` — new recipient email address
+            - `subject` — new subject
+            - `body` — new plain text body
+            - `cc` — new CC recipient
+            - `account` — new sender email address
+
+            Returns `id` — the new draft's integer ID (replaces the old one).
+
+            ### POST /mail/reply
+            Reply to a message. Creates a draft reply.
+            - `id` (required) — message id or messageId
+            - `body` (required) — reply text (prepended to original)
+            - `mailbox` (default: inbox)
+            - `account`
+            - `replyAll` (default: false)
+
+            Returns draft ID. Send via POST /mail/send.
+
+            ### POST /mail/forward
+            Forward a message. Creates a draft forward.
+            - `id` (required) — message id or messageId
+            - `to` (required) — recipient email address
+            - `body` — text to prepend
+            - `mailbox` (default: inbox)
+            - `account`
+
+            Returns draft ID. Send via POST /mail/send.
+
             ### POST /mail/send
             Send a draft email. Finds the draft in the Drafts mailbox, sends it, and removes it from Drafts.
             - `id` (required) — the draft ID returned by `/mail/compose`
@@ -124,168 +155,144 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
     }
 
     routes.get("schema") { req -> Response in
+        let readEndpoints: [[String: Any]] = [
+            [
+                "method": "GET", "path": "/mail/accounts",
+                "params": [] as [[String: Any]],
+            ],
+            [
+                "method": "GET", "path": "/mail/mailboxes",
+                "params": [["name": "account", "from": "query", "type": "string"]],
+            ],
+            [
+                "method": "GET", "path": "/mail/messages",
+                "params": [
+                    ["name": "mailbox", "from": "query", "type": "string", "default": "INBOX"],
+                    ["name": "account", "from": "query", "type": "string"],
+                    ["name": "unread", "from": "query", "type": "boolean", "default": false],
+                    ["name": "flagged", "from": "query", "type": "boolean", "default": false],
+                    ["name": "search", "from": "query", "type": "string"],
+                    ["name": "limit", "from": "query", "type": "number", "default": 50],
+                    ["name": "offset", "from": "query", "type": "number", "default": 0],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "GET", "path": "/mail/message",
+                "params": [
+                    ["name": "id", "from": "query", "type": "string", "required": true],
+                    ["name": "mailbox", "from": "query", "type": "string", "default": "INBOX"],
+                    ["name": "account", "from": "query", "type": "string"],
+                    ["name": "includeSource", "from": "query", "type": "boolean", "default": false],
+                ] as [[String: Any]],
+            ],
+        ]
+
+        let actionEndpoints: [[String: Any]] = [
+            [
+                "method": "POST", "path": "/mail/messages/read",
+                "params": [
+                    ["name": "ids", "from": "body", "type": "string[]", "required": true],
+                    ["name": "read", "from": "body", "type": "boolean", "default": true],
+                    ["name": "mailbox", "from": "body", "type": "string", "default": "INBOX"],
+                    ["name": "account", "from": "body", "type": "string"],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "POST", "path": "/mail/messages/flag",
+                "params": [
+                    ["name": "ids", "from": "body", "type": "string[]", "required": true],
+                    ["name": "flagged", "from": "body", "type": "boolean", "default": true],
+                    ["name": "mailbox", "from": "body", "type": "string", "default": "INBOX"],
+                    ["name": "account", "from": "body", "type": "string"],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "POST", "path": "/mail/messages/move",
+                "params": [
+                    ["name": "ids", "from": "body", "type": "string[]", "required": true],
+                    ["name": "mailbox", "from": "body", "type": "string", "required": true],
+                    ["name": "account", "from": "body", "type": "string"],
+                    ["name": "fromMailbox", "from": "body", "type": "string", "default": "INBOX"],
+                    ["name": "fromAccount", "from": "body", "type": "string"],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "POST", "path": "/mail/messages/archive",
+                "params": [
+                    ["name": "ids", "from": "body", "type": "string[]", "required": true],
+                    ["name": "mailbox", "from": "body", "type": "string", "default": "INBOX"],
+                    ["name": "account", "from": "body", "type": "string"],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "POST", "path": "/mail/messages/delete",
+                "params": [
+                    ["name": "ids", "from": "body", "type": "string[]", "required": true],
+                    ["name": "mailbox", "from": "body", "type": "string", "default": "INBOX"],
+                    ["name": "account", "from": "body", "type": "string"],
+                ] as [[String: Any]],
+            ],
+        ]
+
+        let composeEndpoints: [[String: Any]] = [
+            [
+                "method": "POST", "path": "/mail/compose",
+                "params": [
+                    ["name": "to", "from": "body", "type": "string"],
+                    ["name": "subject", "from": "body", "type": "string", "required": true],
+                    ["name": "body", "from": "body", "type": "string", "required": true],
+                    ["name": "cc", "from": "body", "type": "string"],
+                    ["name": "account", "from": "body", "type": "string"],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "POST", "path": "/mail/compose/update",
+                "params": [
+                    ["name": "id", "from": "body", "type": "string", "required": true],
+                    ["name": "to", "from": "body", "type": "string"],
+                    ["name": "subject", "from": "body", "type": "string"],
+                    ["name": "body", "from": "body", "type": "string"],
+                    ["name": "cc", "from": "body", "type": "string"],
+                    ["name": "account", "from": "body", "type": "string"],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "POST", "path": "/mail/reply",
+                "params": [
+                    ["name": "id", "from": "body", "type": "string", "required": true],
+                    ["name": "body", "from": "body", "type": "string", "required": true],
+                    ["name": "mailbox", "from": "body", "type": "string"],
+                    ["name": "account", "from": "body", "type": "string"],
+                    ["name": "replyAll", "from": "body", "type": "boolean", "default": false],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "POST", "path": "/mail/forward",
+                "params": [
+                    ["name": "id", "from": "body", "type": "string", "required": true],
+                    ["name": "to", "from": "body", "type": "string", "required": true],
+                    ["name": "body", "from": "body", "type": "string"],
+                    ["name": "mailbox", "from": "body", "type": "string"],
+                    ["name": "account", "from": "body", "type": "string"],
+                ] as [[String: Any]],
+            ],
+            [
+                "method": "POST", "path": "/mail/send",
+                "params": [
+                    ["name": "id", "from": "body", "type": "string", "required": true]
+                ] as [[String: Any]],
+            ],
+            ["method": "GET", "path": "/mail/help", "params": [] as [[String: Any]]],
+            ["method": "GET", "path": "/mail/health", "params": [] as [[String: Any]]],
+        ]
+
+        let endpoints: [[String: Any]] = readEndpoints + actionEndpoints + composeEndpoints
         let schema: [String: Any] = [
             "ok": true,
             "result": [
                 "app": "mail-bridge",
-                "endpoints": [
-                    [
-                        "method": "GET",
-                        "path": "/mail/accounts",
-                        "params": [] as [[String: Any]],
-                    ],
-                    [
-                        "method": "GET",
-                        "path": "/mail/mailboxes",
-                        "params": [
-                            ["name": "account", "from": "query", "type": "string"]
-                        ],
-                    ],
-                    [
-                        "method": "GET",
-                        "path": "/mail/messages",
-                        "params": [
-                            [
-                                "name": "mailbox", "from": "query", "type": "string",
-                                "default": "INBOX",
-                            ],
-                            ["name": "account", "from": "query", "type": "string"],
-                            [
-                                "name": "unread", "from": "query", "type": "boolean",
-                                "default": false,
-                            ],
-                            [
-                                "name": "flagged", "from": "query", "type": "boolean",
-                                "default": false,
-                            ],
-                            ["name": "search", "from": "query", "type": "string"],
-                            ["name": "limit", "from": "query", "type": "number", "default": 50],
-                            ["name": "offset", "from": "query", "type": "number", "default": 0],
-                        ],
-                    ],
-                    [
-                        "method": "GET",
-                        "path": "/mail/message",
-                        "params": [
-                            ["name": "id", "from": "query", "type": "string", "required": true],
-                            [
-                                "name": "mailbox", "from": "query", "type": "string",
-                                "default": "INBOX",
-                            ],
-                            ["name": "account", "from": "query", "type": "string"],
-                            [
-                                "name": "includeSource", "from": "query", "type": "boolean",
-                                "default": false,
-                            ],
-                        ],
-                    ],
-                    [
-                        "method": "POST",
-                        "path": "/mail/messages/read",
-                        "params": [
-                            ["name": "ids", "from": "body", "type": "string[]", "required": true],
-                            ["name": "read", "from": "body", "type": "boolean", "default": true],
-                            [
-                                "name": "mailbox", "from": "body", "type": "string",
-                                "default": "INBOX",
-                            ],
-                            ["name": "account", "from": "body", "type": "string"],
-                        ],
-                    ],
-                    [
-                        "method": "POST",
-                        "path": "/mail/messages/flag",
-                        "params": [
-                            ["name": "ids", "from": "body", "type": "string[]", "required": true],
-                            [
-                                "name": "flagged", "from": "body", "type": "boolean",
-                                "default": true,
-                            ],
-                            [
-                                "name": "mailbox", "from": "body", "type": "string",
-                                "default": "INBOX",
-                            ],
-                            ["name": "account", "from": "body", "type": "string"],
-                        ],
-                    ],
-                    [
-                        "method": "POST",
-                        "path": "/mail/messages/move",
-                        "params": [
-                            ["name": "ids", "from": "body", "type": "string[]", "required": true],
-                            [
-                                "name": "mailbox", "from": "body", "type": "string",
-                                "required": true,
-                            ],
-                            ["name": "account", "from": "body", "type": "string"],
-                            [
-                                "name": "fromMailbox", "from": "body", "type": "string",
-                                "default": "INBOX",
-                            ],
-                            ["name": "fromAccount", "from": "body", "type": "string"],
-                        ],
-                    ],
-                    [
-                        "method": "POST",
-                        "path": "/mail/messages/archive",
-                        "params": [
-                            ["name": "ids", "from": "body", "type": "string[]", "required": true],
-                            [
-                                "name": "mailbox", "from": "body", "type": "string",
-                                "default": "INBOX",
-                            ],
-                            ["name": "account", "from": "body", "type": "string"],
-                        ],
-                    ],
-                    [
-                        "method": "POST",
-                        "path": "/mail/messages/delete",
-                        "params": [
-                            ["name": "ids", "from": "body", "type": "string[]", "required": true],
-                            [
-                                "name": "mailbox", "from": "body", "type": "string",
-                                "default": "INBOX",
-                            ],
-                            ["name": "account", "from": "body", "type": "string"],
-                        ],
-                    ],
-                    [
-                        "method": "POST",
-                        "path": "/mail/compose",
-                        "params": [
-                            ["name": "to", "from": "body", "type": "string"],
-                            [
-                                "name": "subject", "from": "body", "type": "string",
-                                "required": true,
-                            ],
-                            ["name": "body", "from": "body", "type": "string", "required": true],
-                            ["name": "cc", "from": "body", "type": "string"],
-                            [
-                                "name": "account", "from": "body", "type": "string",
-                                "description":
-                                    "Sender email address (e.g. user@icloud.com), not account name. See GET /accounts for addresses.",
-                            ],
-                        ],
-                    ],
-                    [
-                        "method": "POST",
-                        "path": "/mail/send",
-                        "params": [
-                            ["name": "id", "from": "body", "type": "string", "required": true],
-                        ],
-                    ],
-                    [
-                        "method": "GET",
-                        "path": "/mail/help",
-                        "params": [] as [[String: Any]],
-                    ],
-                    [
-                        "method": "GET",
-                        "path": "/mail/health",
-                        "params": [] as [[String: Any]],
-                    ],
-                ],
-            ],
+                "endpoints": endpoints,
+            ] as [String: Any],
         ]
         return try responseJSON(policy.filterSchema(schema, prefix: "mail"))
     }
@@ -441,6 +448,71 @@ func registerMailRoutes(on routes: RoutesBuilder, api: MailBridgeAPI, policy: En
         }
 
         return try responseJSON(["ok": true, "result": response])
+    }
+
+    routes.post("compose", "update") { req async throws -> Response in
+        struct UpdateDraftRequest: Content {
+            let id: String
+            let to: String?
+            let subject: String?
+            let body: String?
+            let cc: String?
+            let account: String?
+        }
+
+        let body = try req.content.decode(UpdateDraftRequest.self)
+        let result = api.updateDraft(
+            id: body.id, to: body.to, subject: body.subject, body: body.body,
+            cc: body.cc, account: body.account)
+
+        if let error = result.error {
+            return try responseJSON(["ok": false, "error": error])
+        }
+
+        var response: [String: Any] = ["updated": true]
+        if let id = result.id {
+            response["id"] = id
+        }
+
+        return try responseJSON(["ok": true, "result": response])
+    }
+
+    routes.post("reply") { req async throws -> Response in
+        struct ReplyRequest: Content {
+            let id: String
+            let body: String
+            let mailbox: String?
+            let account: String?
+            let replyAll: Bool?
+        }
+
+        let body = try req.content.decode(ReplyRequest.self)
+        let result = api.replyToMessage(
+            id: body.id, mailbox: body.mailbox, account: body.account,
+            body: body.body, replyAll: body.replyAll ?? false)
+        if let error = result.error {
+            return try responseJSON(["ok": false, "error": error])
+        }
+        return try responseJSON(["ok": true, "result": ["id": result.id as Any]])
+    }
+
+    routes.post("forward") { req async throws -> Response in
+        struct ForwardRequest: Content {
+            let id: String
+            let to: String
+            let body: String?
+            let mailbox: String?
+            let account: String?
+        }
+
+        let body = try req.content.decode(ForwardRequest.self)
+        let result = api.forwardMessage(
+            id: body.id, mailbox: body.mailbox, account: body.account,
+            to: body.to, body: body.body)
+        if let error = result.error {
+            return try responseJSON(["ok": false, "error": error])
+        }
+        return try responseJSON(["ok": true, "result": ["id": result.id as Any]])
     }
 
     routes.post("send") { req async throws -> Response in

@@ -52,22 +52,27 @@ class NetNewsWireAPI {
     // MARK: - Articles
 
     func getArticles(
-        unread: Bool, starred: Bool, feedId: String?, limit: Int, includeContent: Bool
+        unread: Bool, starred: Bool, feedId: String?, limit: Int, offset: Int,
+        includeContent: Bool
     ) async throws -> Any {
         let feedFilter = feedId.map { escapeJSString($0) } ?? "null"
         let script = """
             const app = Application('NetNewsWire');
             const limit = \(limit);
+            const offset = \(offset);
             const onlyUnread = \(unread);
             const onlyStarred = \(starred);
             const targetFeedId = \(feedFilter);
             const includeContent = \(includeContent);
             const results = [];
+            let matched = 0;
             outer: for (const feed of app.feeds()) {
               if (targetFeedId && feed.id() !== targetFeedId) continue;
               for (const article of feed.articles()) {
                 if (onlyUnread && article.read()) continue;
                 if (onlyStarred && !article.starred()) continue;
+                matched++;
+                if (matched <= offset) continue;
                 let publishedDate = null;
                 try { const d = article.publishedDate(); if (d) publishedDate = d.toISOString(); } catch {}
                 let arrivedDate = null;

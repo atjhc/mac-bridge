@@ -28,6 +28,7 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: 
             - `from` (default: now) — ISO 8601 start date
             - `to` (default: 7 days from now) — ISO 8601 end date
             - `limit` (default: 100)
+            - `offset` (default: 0) — skip this many events for pagination
             - `status` — filter by status: `confirmed`, `tentative`, `canceled`, or `pending`/`none`
             - `siri` (default: false) — only show Siri-suggested events (those with messages:// or mail:// URLs)
 
@@ -46,6 +47,35 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: 
             - `location`
             - `description` — event notes
             - `allDay` (default: false)
+
+            ### POST /calendar/events/update
+            Update an existing event. Only provided fields are changed.
+            - `id` (required) — event identifier
+            - `summary` — new title
+            - `startDate` / `endDate` — ISO 8601
+            - `location`, `description`, `allDay`, `calendar`
+            - `span` — "this" (default) or "future" for recurring events
+
+            ### POST /calendar/events/recurrence
+            Set a recurrence rule on an event.
+            - `id` (required) — event identifier
+            - `frequency` (required) — daily, weekly, monthly, yearly
+            - `interval` (default: 1) — repeat every N periods
+            - `endDate` — ISO 8601 end date for recurrence
+            - `count` — number of occurrences (alternative to endDate)
+
+            ### POST /calendar/events/recurrence/remove
+            Remove recurrence from an event.
+            - `id` (required)
+
+            ### POST /calendar/events/alarm
+            Add an alarm to an event.
+            - `id` (required) — event identifier
+            - `offset` (required) — seconds relative to event start (e.g. -600 for 10 min before)
+
+            ### POST /calendar/events/alarm/remove
+            Remove all alarms from an event.
+            - `id` (required)
 
             ### POST /calendar/events/delete
             Delete events by ID.
@@ -85,6 +115,7 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: 
                             ["name": "from", "from": "query", "type": "string"],
                             ["name": "to", "from": "query", "type": "string"],
                             ["name": "limit", "from": "query", "type": "number", "default": 100],
+                            ["name": "offset", "from": "query", "type": "number", "default": 0],
                             ["name": "status", "from": "query", "type": "string"],
                             ["name": "siri", "from": "query", "type": "boolean"],
                         ],
@@ -113,6 +144,57 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: 
                             ["name": "location", "from": "body", "type": "string"],
                             ["name": "description", "from": "body", "type": "string"],
                             ["name": "allDay", "from": "body", "type": "boolean"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/calendar/events/update",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true],
+                            ["name": "summary", "from": "body", "type": "string"],
+                            ["name": "startDate", "from": "body", "type": "string"],
+                            ["name": "endDate", "from": "body", "type": "string"],
+                            ["name": "location", "from": "body", "type": "string"],
+                            ["name": "description", "from": "body", "type": "string"],
+                            ["name": "allDay", "from": "body", "type": "boolean"],
+                            ["name": "calendar", "from": "body", "type": "string"],
+                            ["name": "span", "from": "body", "type": "string", "default": "this"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/calendar/events/recurrence",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true],
+                            [
+                                "name": "frequency", "from": "body", "type": "string",
+                                "required": true,
+                            ],
+                            ["name": "interval", "from": "body", "type": "number", "default": 1],
+                            ["name": "endDate", "from": "body", "type": "string"],
+                            ["name": "count", "from": "body", "type": "number"],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/calendar/events/recurrence/remove",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true]
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/calendar/events/alarm",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true],
+                            ["name": "offset", "from": "body", "type": "number", "required": true],
+                        ],
+                    ],
+                    [
+                        "method": "POST",
+                        "path": "/calendar/events/alarm/remove",
+                        "params": [
+                            ["name": "id", "from": "body", "type": "string", "required": true]
                         ],
                     ],
                     [
@@ -149,6 +231,7 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: 
         let fromStr = req.query[String.self, at: "from"]
         let toStr = req.query[String.self, at: "to"]
         let limit = req.query[Int.self, at: "limit"] ?? 100
+        let offset = max(req.query[Int.self, at: "offset"] ?? 0, 0)
         let status = req.query[String.self, at: "status"]
         let siri = req.query[Bool.self, at: "siri"]
 
@@ -161,18 +244,16 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: 
             calendarName: calendarName,
             from: from,
             to: to,
-            limit: limit * 2,
+            limit: siri == true ? (limit + offset) * 2 : limit,
+            offset: siri == true ? 0 : offset,
             statusFilter: status
         )
 
         if siri == true {
-            events = events.filter { event in
-                guard let url = event["url"] as? String else { return false }
-                return url.hasPrefix("messages://") || url.hasPrefix("mail://")
-            }
+            events = Array(events.dropFirst(offset).prefix(limit))
         }
 
-        return try responseJSON(["ok": true, "result": Array(events.prefix(limit))])
+        return try responseJSON(["ok": true, "result": events])
     }
 
     routes.get("event") { req async throws -> Response in
@@ -226,5 +307,79 @@ func registerCalendarRoutes(on routes: RoutesBuilder, api: CalendarAPI, policy: 
         let deleted = try await api.deleteEvents(ids: body.ids)
 
         return try responseJSON(["ok": true, "result": ["deleted": deleted]])
+    }
+
+    routes.post("events", "update") { req async throws -> Response in
+        struct UpdateEventRequest: Content {
+            let id: String
+            let summary: String?
+            let startDate: String?
+            let endDate: String?
+            let location: String?
+            let description: String?
+            let allDay: Bool?
+            let calendar: String?
+            let span: String?
+        }
+
+        let body = try req.content.decode(UpdateEventRequest.self)
+        let iso = ISO8601DateFormatter()
+        let result = try await api.updateEvent(
+            id: body.id,
+            title: body.summary,
+            startDate: body.startDate.flatMap { iso.date(from: $0) },
+            endDate: body.endDate.flatMap { iso.date(from: $0) },
+            location: body.location,
+            notes: body.description,
+            isAllDay: body.allDay,
+            calendarName: body.calendar,
+            span: body.span
+        )
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("events", "recurrence") { req async throws -> Response in
+        struct RecurrenceRequest: Content {
+            let id: String
+            let frequency: String
+            let interval: Int?
+            let endDate: String?
+            let count: Int?
+        }
+
+        let body = try req.content.decode(RecurrenceRequest.self)
+        let result = try await api.setRecurrence(
+            eventId: body.id,
+            frequency: body.frequency,
+            interval: body.interval ?? 1,
+            endDate: body.endDate.flatMap { ISO8601DateFormatter().date(from: $0) },
+            count: body.count
+        )
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("events", "recurrence", "remove") { req async throws -> Response in
+        struct IDRequest: Content { let id: String }
+        let body = try req.content.decode(IDRequest.self)
+        let result = try await api.removeRecurrence(eventId: body.id)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("events", "alarm") { req async throws -> Response in
+        struct AlarmRequest: Content {
+            let id: String
+            let offset: Double
+        }
+
+        let body = try req.content.decode(AlarmRequest.self)
+        let result = try await api.addAlarm(eventId: body.id, offset: body.offset)
+        return try responseJSON(["ok": true, "result": result])
+    }
+
+    routes.post("events", "alarm", "remove") { req async throws -> Response in
+        struct IDRequest: Content { let id: String }
+        let body = try req.content.decode(IDRequest.self)
+        let result = try await api.removeAlarms(eventId: body.id)
+        return try responseJSON(["ok": true, "result": result])
     }
 }
